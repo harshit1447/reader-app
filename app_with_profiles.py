@@ -48,7 +48,7 @@ def get_conn():
 def init_db():
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(\"\"\"
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE NOT NULL,
@@ -56,7 +56,7 @@ def init_db():
         created_at TEXT NOT NULL
     )
     \"\"\")
-    cur.execute(\"\"\"
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS reading_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
