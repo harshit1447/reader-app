@@ -1,0 +1,11 @@
+streamlit
+scikit-learn
+nltk
+requests
+beautifulsoup4
+PyPDF2
+python-docx
+pandas
+numpy
+passlib
+psycopg2-binary
