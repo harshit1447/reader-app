@@ -55,7 +55,7 @@ def init_db():
         password_hash TEXT NOT NULL,
         created_at TEXT NOT NULL
     )
-    \"\"\")
+    """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS reading_sessions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -66,7 +66,7 @@ def init_db():
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )
-    \"\"\")
+    """)
     conn.commit()
     conn.close()
 
