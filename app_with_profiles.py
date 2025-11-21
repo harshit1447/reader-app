@@ -50,73 +50,134 @@ DB_FILE = "reader_app.db"
 def load_custom_css():
     st.markdown("""
     <style>
+    /* Import Google Fonts */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+    
+    /* Global styles */
+    * {
+        font-family: 'Inter', sans-serif;
+    }
+    
     /* Main app styling */
     .main {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
         padding: 0;
     }
     
+    /* Remove default Streamlit padding */
+    .block-container {
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+        max-width: 1200px;
+    }
+    
     /* Card containers */
-    .card {
-        background: white;
-        border-radius: 20px;
-        padding: 30px;
-        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-        margin: 20px 0;
-    }
-    
     .glass-card {
-        background: rgba(255, 255, 255, 0.95);
+        background: rgba(255, 255, 255, 0.98);
         backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 30px;
-        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
-        border: 1px solid rgba(255, 255, 255, 0.18);
-        margin: 20px 0;
+        border-radius: 24px;
+        padding: 35px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        margin: 25px 0;
     }
     
-    /* Header styling */
+    /* Modern header styling */
     .app-header {
         text-align: center;
-        padding: 40px 0 20px 0;
-        color: white;
+        padding: 60px 20px 40px 20px;
+        margin-bottom: 20px;
     }
     
     .app-title {
-        font-size: 3.5em;
+        font-size: 3.8em;
         font-weight: 800;
-        margin: 0;
-        background: linear-gradient(45deg, #fff, #f0f0f0);
+        margin: 0 0 15px 0;
+        background: linear-gradient(135deg, #ffffff 0%, #a8d8ff 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+        letter-spacing: -1px;
     }
     
     .app-subtitle {
-        font-size: 1.2em;
-        margin-top: 10px;
-        opacity: 0.9;
+        font-size: 1.3em;
+        color: rgba(255, 255, 255, 0.85);
+        margin: 0;
+        font-weight: 400;
+    }
+    
+    /* User info bar */
+    .user-info-bar {
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 15px 25px;
+        margin: 0 auto 30px auto;
+        max-width: 1200px;
+        border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    
+    .user-badge {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 12px 24px;
+        border-radius: 30px;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        font-size: 0.95em;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
     }
     
     /* Metric cards */
     div[data-testid="metric-container"] {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 15px;
-        padding: 20px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border-radius: 20px;
+        padding: 25px;
+        box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3);
         border: none;
+        transition: transform 0.2s ease;
+    }
+    
+    div[data-testid="metric-container"]:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 12px 32px rgba(102, 126, 234, 0.4);
     }
     
     div[data-testid="metric-container"] label {
-        color: white !important;
+        color: rgba(255, 255, 255, 0.9) !important;
         font-weight: 600;
-        font-size: 0.9em;
+        font-size: 0.95em;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
     }
     
     div[data-testid="metric-container"] [data-testid="stMetricValue"] {
         color: white !important;
-        font-size: 2em;
+        font-size: 2.2em;
+        font-weight: 800;
+    }
+    
+    /* Section headers */
+    .section-header {
+        color: white;
+        font-size: 2.2em;
         font-weight: 700;
+        margin: 40px 0 25px 0;
+        text-align: center;
+        letter-spacing: -0.5px;
+    }
+    
+    .subsection-header {
+        color: #1a1a2e;
+        font-size: 1.5em;
+        font-weight: 700;
+        margin: 0 0 20px 0;
+        display: flex;
+        align-items: center;
+        gap: 10px;
     }
     
     /* Button styling */
@@ -124,94 +185,209 @@ def load_custom_css():
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         border: none;
-        border-radius: 12px;
-        padding: 12px 30px;
+        border-radius: 14px;
+        padding: 14px 32px;
         font-weight: 600;
         font-size: 1em;
         transition: all 0.3s ease;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+        border: 2px solid transparent;
     }
     
     .stButton>button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        box-shadow: 0 8px 28px rgba(102, 126, 234, 0.6);
+        border: 2px solid rgba(255, 255, 255, 0.3);
+    }
+    
+    .stButton>button:active {
+        transform: translateY(0px);
+    }
+    
+    /* Primary button variant */
+    .stButton>button[kind="primary"] {
+        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+    }
+    
+    .stButton>button[kind="primary"]:hover {
+        box-shadow: 0 8px 28px rgba(245, 87, 108, 0.6);
     }
     
     /* Input styling */
-    .stTextInput>div>div>input {
-        border-radius: 12px;
+    .stTextInput>div>div>input,
+    .stTextArea>div>div>textarea {
+        border-radius: 14px;
         border: 2px solid #e0e0e0;
-        padding: 12px;
+        padding: 14px 18px;
         font-size: 1em;
+        transition: all 0.3s ease;
+        background: white;
+    }
+    
+    .stTextInput>div>div>input:focus,
+    .stTextArea>div>div>textarea:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
+        outline: none;
+    }
+    
+    .stTextInput>label,
+    .stTextArea>label {
+        font-weight: 600;
+        color: #1a1a2e;
+        font-size: 0.95em;
+        margin-bottom: 8px;
+    }
+    
+    /* Tabs styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+        background: transparent;
+        border-bottom: none;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: rgba(255, 255, 255, 0.1);
+        color: white;
+        border-radius: 12px;
+        padding: 12px 28px;
+        font-weight: 600;
+        border: 2px solid rgba(255, 255, 255, 0.2);
         transition: all 0.3s ease;
     }
     
-    .stTextInput>div>div>input:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    .stTabs [data-baseweb="tab"]:hover {
+        background: rgba(255, 255, 255, 0.2);
+        border-color: rgba(255, 255, 255, 0.4);
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: white !important;
+        color: #1a1a2e !important;
+        border-color: white !important;
     }
     
     /* Radio button styling */
     .stRadio>div {
-        background: white;
-        padding: 10px;
+        background: transparent;
+        padding: 15px;
+        border-radius: 14px;
+        gap: 12px;
+    }
+    
+    .stRadio>div>label {
+        background: rgba(255, 255, 255, 0.1);
+        padding: 12px 24px;
         border-radius: 12px;
-    }
-    
-    /* Dataframe styling */
-    .dataframe {
-        border-radius: 12px;
-        overflow: hidden;
-    }
-    
-    /* Auth container */
-    .auth-container {
-        max-width: 450px;
-        margin: 50px auto;
-        background: white;
-        border-radius: 25px;
-        padding: 40px;
-        box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-    }
-    
-    /* User badge */
-    .user-badge {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
-        padding: 10px 20px;
-        border-radius: 25px;
-        display: inline-block;
         font-weight: 600;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        transition: all 0.3s ease;
     }
     
-    /* Section headers */
-    .section-header {
-        color: white;
-        font-size: 2em;
-        font-weight: 700;
-        margin: 30px 0 20px 0;
-        text-align: center;
+    .stRadio>div>label:hover {
+        background: rgba(255, 255, 255, 0.15);
+        border-color: rgba(255, 255, 255, 0.3);
+    }
+    
+    .stRadio>div>label[data-checked="true"] {
+        background: white;
+        color: #1a1a2e;
+        border-color: white;
     }
     
     /* Preview card */
     .preview-card {
-        background: #f8f9fa;
-        border-left: 4px solid #667eea;
-        padding: 20px;
-        border-radius: 10px;
-        margin: 15px 0;
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        border-left: 5px solid #667eea;
+        padding: 24px;
+        border-radius: 14px;
+        margin: 20px 0;
+        font-size: 1.05em;
+        line-height: 1.6;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
     }
     
-    /* Success/Info messages */
-    .stSuccess, .stInfo {
+    /* Dataframe styling */
+    .stDataFrame {
+        border-radius: 14px;
+        overflow: hidden;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+    
+    /* Messages styling */
+    .stSuccess, .stInfo, .stWarning, .stError {
+        border-radius: 14px;
+        padding: 16px 20px;
+        font-weight: 500;
+    }
+    
+    /* Expander styling */
+    .streamlit-expanderHeader {
+        background: rgba(102, 126, 234, 0.1);
         border-radius: 12px;
+        font-weight: 600;
+        padding: 14px 18px;
+    }
+    
+    /* Auth container */
+    .auth-container {
+        max-width: 480px;
+        margin: 40px auto;
+        background: white;
+        border-radius: 28px;
+        padding: 50px 45px;
+        box-shadow: 0 25px 70px rgba(0, 0, 0, 0.3);
+    }
+    
+    .auth-title {
+        font-size: 2em;
+        font-weight: 700;
+        color: #1a1a2e;
+        margin-bottom: 10px;
+        text-align: center;
+    }
+    
+    .auth-subtitle {
+        color: #666;
+        text-align: center;
+        margin-bottom: 30px;
+        font-size: 1.05em;
+    }
+    
+    /* Caption styling */
+    .caption {
+        color: #999;
+        font-size: 0.9em;
+        font-style: italic;
+        margin-top: 8px;
     }
     
     /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
+    
+    /* Scrollbar styling */
+    ::-webkit-scrollbar {
+        width: 10px;
+        height: 10px;
+    }
+    
+    ::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.1);
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+        background: rgba(102, 126, 234, 0.5);
+        border-radius: 10px;
+    }
+    
+    ::-webkit-scrollbar-thumb:hover {
+        background: rgba(102, 126, 234, 0.7);
+    }
     </style>
     """, unsafe_allow_html=True)
 
@@ -489,53 +665,56 @@ def auth_page():
     
     st.markdown('<div class="auth-container">', unsafe_allow_html=True)
     
+    st.markdown('<h2 class="auth-title">Welcome</h2>', unsafe_allow_html=True)
+    st.markdown('<p class="auth-subtitle">Sign in to start tracking your articles</p>', unsafe_allow_html=True)
+    
     mode = st.radio("", ["Login", "Sign up"], horizontal=True, label_visibility="collapsed")
     
+    st.markdown("<br>", unsafe_allow_html=True)
+    
     if mode == "Sign up":
-        st.markdown("### Create Your Account")
-        dn = st.text_input("Display name (optional)", key="su_disp", placeholder="Enter your name")
+        dn = st.text_input("Display name (optional)", key="su_disp", placeholder="Your name")
         un = st.text_input("Username", key="su_user", placeholder="Choose a username")
         em = st.text_input("Email (optional)", key="su_email", placeholder="your@email.com")
-        pw = st.text_input("Password", type="password", key="su_pass", placeholder="Enter a secure password")
+        pw = st.text_input("Password", type="password", key="su_pass", placeholder="Create a password")
         
-        col1, col2, col3 = st.columns([1,2,1])
-        with col2:
-            if st.button("Create account", use_container_width=True):
-                ok, msg = create_user(un, pw, display_name=dn or None, email=em or None)
-                if ok:
-                    uid = verify_user(un, pw)
-                    st.session_state.user_id = int(uid) if uid else None
-                    st.session_state.page = "app"
-                    st.success("🎉 Account created — you're signed in!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error(msg)
-    else:
-        st.markdown("### Welcome Back")
-        un = st.text_input("Username", key="li_user", placeholder="Enter your username")
-        pw = st.text_input("Password", type="password", key="li_pass", placeholder="Enter your password")
+        st.markdown("<br>", unsafe_allow_html=True)
         
-        col1, col2, col3 = st.columns([1,2,1])
-        with col2:
-            if st.button("Log in", use_container_width=True):
+        if st.button("Create account", use_container_width=True, type="primary"):
+            ok, msg = create_user(un, pw, display_name=dn or None, email=em or None)
+            if ok:
                 uid = verify_user(un, pw)
-                if uid:
-                    st.session_state.user_id = int(uid)
-                    st.session_state.page = "app"
-                    st.success("✅ Signed in successfully!")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("❌ Invalid credentials")
+                st.session_state.user_id = int(uid) if uid else None
+                st.session_state.page = "app"
+                st.success("🎉 Account created!")
+                time.sleep(0.5)
+                st.rerun()
+            else:
+                st.error(msg)
+    else:
+        un = st.text_input("Username", key="li_user", placeholder="Your username")
+        pw = st.text_input("Password", type="password", key="li_pass", placeholder="Your password")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        if st.button("Log in", use_container_width=True, type="primary"):
+            uid = verify_user(un, pw)
+            if uid:
+                st.session_state.user_id = int(uid)
+                st.session_state.page = "app"
+                st.success("✅ Welcome back!")
+                time.sleep(0.5)
+                st.rerun()
+            else:
+                st.error("❌ Invalid credentials")
     
+    st.markdown("<br>", unsafe_allow_html=True)
     st.markdown("---")
-    col1, col2, col3 = st.columns([1,2,1])
-    with col2:
-        if st.button("Continue as guest", use_container_width=True):
-            st.session_state.user_id = None
-            st.session_state.page = "app"
-            st.rerun()
+    
+    if st.button("Continue as guest", use_container_width=True):
+        st.session_state.user_id = None
+        st.session_state.page = "app"
+        st.rerun()
     
     st.markdown('</div>', unsafe_allow_html=True)
 
@@ -552,7 +731,8 @@ def app_page():
     """, unsafe_allow_html=True)
     
     # User info bar
-    col1, col2, col3 = st.columns([1,2,1])
+    st.markdown('<div class="user-info-bar">', unsafe_allow_html=True)
+    col1, col2, col3 = st.columns([1, 2, 1])
     with col1:
         if profile:
             st.markdown(f'<div class="user-badge">👤 {profile.get("display_name") or profile.get("username")}</div>', unsafe_allow_html=True)
@@ -561,18 +741,19 @@ def app_page():
     
     with col3:
         if profile:
-            if st.button("🚪 Logout", use_container_width=True):
+            if st.button("Logout", use_container_width=True):
                 st.session_state.user_id = None
                 st.session_state.page = "auth"
                 st.rerun()
         else:
-            if st.button("🔑 Login", use_container_width=True):
+            if st.button("Sign In", use_container_width=True):
                 st.session_state.page = "auth"
                 st.rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
 
     # Main content area
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown("### 🔗 Add New Article")
+    st.markdown('<div class="subsection-header">🔗 Add New Article</div>', unsafe_allow_html=True)
     
     # Add tabs for URL vs Manual entry
     tab1, tab2 = st.tabs(["📎 From URL", "✍️ Paste Text"])
@@ -633,22 +814,22 @@ def app_page():
                             st.info("💡 Install `newspaper3k` for even better article extraction from news sites and Medium.")
     
     with tab2:
-        st.markdown("### 📝 Manual Article Entry")
+        st.markdown('<div class="subsection-header" style="font-size: 1.2em; margin-top: 15px;">📝 Manual Article Entry</div>', unsafe_allow_html=True)
         st.info("💡 Perfect for Medium, LinkedIn, paywalled sites, or when automatic extraction doesn't work.")
         
         col1, col2 = st.columns([2, 1])
         with col1:
-            manual_title = st.text_input("📄 Article Title *", placeholder="Enter the article title here", key="manual_title")
+            manual_title = st.text_input("📄 Article Title", placeholder="Enter the article title here", key="manual_title")
         with col2:
             manual_category = st.text_input("🏷️ Category (optional)", placeholder="e.g., Technology", key="manual_category")
         
         manual_url = st.text_input("🔗 Article URL (optional)", placeholder="https://medium.com/@author/article-name", key="manual_url")
-        manual_text = st.text_area("📝 Article Content *", 
+        manual_text = st.text_area("📝 Article Content", 
                                    height=350, 
                                    placeholder="Paste the full article text here...\n\nTip: Select all text from the article (Ctrl+A or Cmd+A) and paste it here.",
                                    key="manual_text")
         
-        st.caption("* Required fields")
+        st.markdown('<p class="caption">* Title and content are required</p>', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
@@ -675,10 +856,15 @@ def app_page():
     if fetched_text:
         words, sentences = word_and_sentence_counts(fetched_text)
         est_seconds = estimate_reading_seconds(words, wpm=200)
-        category = infer_category(fetched_text) or "General"
+        
+        # Use manual category if provided, otherwise infer
+        if st.session_state.get("manual_mode") and st.session_state.get("manual_category"):
+            category = st.session_state.manual_category
+        else:
+            category = infer_category(fetched_text) or "General"
         
         st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown("### 📊 Article Analysis")
+        st.markdown('<div class="subsection-header">📊 Article Analysis</div>', unsafe_allow_html=True)
         
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("📝 Words", f"{words:,}")
@@ -686,7 +872,11 @@ def app_page():
         col3.metric("⏱️ Read Time", f"{int(est_seconds/60)}m {est_seconds%60}s")
         col4.metric("🏷️ Category", category)
         
-        st.markdown(f'<div class="preview-card"><strong>📄 Preview:</strong><br>{fetched_title}</div>', unsafe_allow_html=True)
+        # Show preview with better formatting
+        st.markdown("---")
+        st.markdown("**📄 Article Preview:**")
+        preview_text = fetched_title if len(fetched_title) > 50 else fetched_text[:200]
+        st.markdown(f'<div class="preview-card">{preview_text}{"..." if len(fetched_text) > 200 else ""}</div>', unsafe_allow_html=True)
 
         col1, col2, col3 = st.columns([1,1,1])
         with col2:
