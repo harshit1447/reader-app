@@ -39,6 +39,175 @@ for pkg in ("punkt", "punkt_tab"):
 
 DB_FILE = "reader_app.db"
 
+# -------------------- Custom CSS --------------------
+def load_custom_css():
+    st.markdown("""
+    <style>
+    /* Main app styling */
+    .main {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        padding: 0;
+    }
+    
+    /* Card containers */
+    .card {
+        background: white;
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        margin: 20px 0;
+    }
+    
+    .glass-card {
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        border-radius: 20px;
+        padding: 30px;
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.15);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        margin: 20px 0;
+    }
+    
+    /* Header styling */
+    .app-header {
+        text-align: center;
+        padding: 40px 0 20px 0;
+        color: white;
+    }
+    
+    .app-title {
+        font-size: 3.5em;
+        font-weight: 800;
+        margin: 0;
+        background: linear-gradient(45deg, #fff, #f0f0f0);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    .app-subtitle {
+        font-size: 1.2em;
+        margin-top: 10px;
+        opacity: 0.9;
+    }
+    
+    /* Metric cards */
+    div[data-testid="metric-container"] {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        border: none;
+    }
+    
+    div[data-testid="metric-container"] label {
+        color: white !important;
+        font-weight: 600;
+        font-size: 0.9em;
+    }
+    
+    div[data-testid="metric-container"] [data-testid="stMetricValue"] {
+        color: white !important;
+        font-size: 2em;
+        font-weight: 700;
+    }
+    
+    /* Button styling */
+    .stButton>button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 12px;
+        padding: 12px 30px;
+        font-weight: 600;
+        font-size: 1em;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+    }
+    
+    /* Input styling */
+    .stTextInput>div>div>input {
+        border-radius: 12px;
+        border: 2px solid #e0e0e0;
+        padding: 12px;
+        font-size: 1em;
+        transition: all 0.3s ease;
+    }
+    
+    .stTextInput>div>div>input:focus {
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    /* Radio button styling */
+    .stRadio>div {
+        background: white;
+        padding: 10px;
+        border-radius: 12px;
+    }
+    
+    /* Dataframe styling */
+    .dataframe {
+        border-radius: 12px;
+        overflow: hidden;
+    }
+    
+    /* Auth container */
+    .auth-container {
+        max-width: 450px;
+        margin: 50px auto;
+        background: white;
+        border-radius: 25px;
+        padding: 40px;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    }
+    
+    /* User badge */
+    .user-badge {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        padding: 10px 20px;
+        border-radius: 25px;
+        display: inline-block;
+        font-weight: 600;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+    }
+    
+    /* Section headers */
+    .section-header {
+        color: white;
+        font-size: 2em;
+        font-weight: 700;
+        margin: 30px 0 20px 0;
+        text-align: center;
+    }
+    
+    /* Preview card */
+    .preview-card {
+        background: #f8f9fa;
+        border-left: 4px solid #667eea;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 15px 0;
+    }
+    
+    /* Success/Info messages */
+    .stSuccess, .stInfo {
+        border-radius: 12px;
+    }
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
+
 # -------------------- DB init --------------------
 def get_conn():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
@@ -160,13 +329,10 @@ def estimate_reading_seconds(words_count: int, wpm: int = 200) -> int:
     return int(round(minutes * 60))
 
 def infer_category(text: str, top_k=1):
-    # Simple heuristic: compute TF-IDF across the single article and return top terms.
-    # For short text this is noisy but works as a lightweight topic label.
     try:
         vectorizer = TfidfVectorizer(stop_words="english", max_features=2000)
         X = vectorizer.fit_transform([text])
         terms = vectorizer.get_feature_names_out()
-        # get tf-idf scores for the single doc
         scores = np.asarray(X.todense()).ravel()
         if scores.sum() == 0:
             return None
@@ -197,8 +363,8 @@ def fetch_user_articles(user_id: int) -> pd.DataFrame:
     return df
 
 # -------------------- Streamlit UI --------------------
-st.set_page_config(page_title="Reader Dashboard", layout="wide")
-st.title("Reader — Save articles to profile dashboard")
+st.set_page_config(page_title="Reader Dashboard", layout="wide", initial_sidebar_state="collapsed")
+load_custom_css()
 
 # session state
 if "user_id" not in st.session_state:
@@ -206,150 +372,223 @@ if "user_id" not in st.session_state:
 if "page" not in st.session_state:
     st.session_state.page = "auth"
 
-# --- Authentication UI (simple full-screen) ---
+# --- Authentication UI ---
 def auth_page():
-    st.markdown("<h2 style='text-align:center'>Sign up or Login</h2>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 0.7, 1])
-    with col2:
-        mode = st.radio("Choose", ["Login", "Sign up"], horizontal=True)
-        if mode == "Sign up":
-            dn = st.text_input("Display name (optional)", key="su_disp")
-            un = st.text_input("Username", key="su_user")
-            em = st.text_input("Email (optional)", key="su_email")
-            pw = st.text_input("Password", type="password", key="su_pass")
-            if st.button("Create account"):
+    st.markdown("""
+    <div class="app-header">
+        <h1 class="app-title">📚 Reader Dashboard</h1>
+        <p class="app-subtitle">Save, track, and manage your reading journey</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown('<div class="auth-container">', unsafe_allow_html=True)
+    
+    mode = st.radio("", ["Login", "Sign up"], horizontal=True, label_visibility="collapsed")
+    
+    if mode == "Sign up":
+        st.markdown("### Create Your Account")
+        dn = st.text_input("Display name (optional)", key="su_disp", placeholder="Enter your name")
+        un = st.text_input("Username", key="su_user", placeholder="Choose a username")
+        em = st.text_input("Email (optional)", key="su_email", placeholder="your@email.com")
+        pw = st.text_input("Password", type="password", key="su_pass", placeholder="Enter a secure password")
+        
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            if st.button("Create account", use_container_width=True):
                 ok, msg = create_user(un, pw, display_name=dn or None, email=em or None)
                 if ok:
                     uid = verify_user(un, pw)
                     st.session_state.user_id = int(uid) if uid else None
                     st.session_state.page = "app"
-                    st.success("Account created — you're signed in.")
-                    st.experimental_rerun()
+                    st.success("🎉 Account created — you're signed in!")
+                    time.sleep(1)
+                    st.rerun()
                 else:
                     st.error(msg)
-        else:
-            un = st.text_input("Username", key="li_user")
-            pw = st.text_input("Password", type="password", key="li_pass")
-            if st.button("Log in"):
+    else:
+        st.markdown("### Welcome Back")
+        un = st.text_input("Username", key="li_user", placeholder="Enter your username")
+        pw = st.text_input("Password", type="password", key="li_pass", placeholder="Enter your password")
+        
+        col1, col2, col3 = st.columns([1,2,1])
+        with col2:
+            if st.button("Log in", use_container_width=True):
                 uid = verify_user(un, pw)
                 if uid:
                     st.session_state.user_id = int(uid)
                     st.session_state.page = "app"
-                    st.success("Signed in.")
-                    st.experimental_rerun()
+                    st.success("✅ Signed in successfully!")
+                    time.sleep(1)
+                    st.rerun()
                 else:
-                    st.error("Invalid credentials")
-        st.markdown("---")
-        if st.button("Continue as guest"):
+                    st.error("❌ Invalid credentials")
+    
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1,2,1])
+    with col2:
+        if st.button("Continue as guest", use_container_width=True):
             st.session_state.user_id = None
             st.session_state.page = "app"
-            st.experimental_rerun()
+            st.rerun()
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- Main app page ---
 def app_page():
     profile = get_profile(st.session_state.user_id) if st.session_state.user_id else None
-    header_cols = st.columns([1,2,1])
-    with header_cols[0]:
+    
+    # Header
+    st.markdown("""
+    <div class="app-header">
+        <h1 class="app-title">📚 Reader Dashboard</h1>
+        <p class="app-subtitle">Your personal reading companion</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # User info bar
+    col1, col2, col3 = st.columns([1,2,1])
+    with col1:
         if profile:
-            st.write(f"Signed in as: **{profile.get('display_name') or profile.get('username')}**")
-            if st.button("Logout"):
+            st.markdown(f'<div class="user-badge">👤 {profile.get("display_name") or profile.get("username")}</div>', unsafe_allow_html=True)
+        else:
+            st.markdown('<div class="user-badge">👤 Guest Mode</div>', unsafe_allow_html=True)
+    
+    with col3:
+        if profile:
+            if st.button("🚪 Logout", use_container_width=True):
                 st.session_state.user_id = None
                 st.session_state.page = "auth"
-                st.experimental_rerun()
+                st.rerun()
         else:
-            st.write("Guest")
-            if st.button("Back to Login"):
+            if st.button("🔑 Login", use_container_width=True):
                 st.session_state.page = "auth"
-                st.experimental_rerun()
+                st.rerun()
 
-    # -- URL input area (center-top)
-    st.subheader("Add article from website")
-    url_input = st.text_input("Paste website URL (include https://)", value=st.session_state.get("url_input",""))
-    if st.button("Fetch & Analyze"):
+    # Main content area
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    st.markdown("### 🔗 Add New Article")
+    
+    url_input = st.text_input("Paste website URL", 
+                               value=st.session_state.get("url_input",""),
+                               placeholder="https://example.com/article",
+                               label_visibility="collapsed")
+    
+    col1, col2, col3 = st.columns([1,1,2])
+    with col1:
+        fetch_button = st.button("🔍 Fetch & Analyze", use_container_width=True)
+    
+    if fetch_button:
         st.session_state.url_input = url_input
         if not url_input or not url_input.strip():
-            st.warning("Please paste a valid URL.")
+            st.warning("⚠️ Please paste a valid URL.")
         else:
-            st.info("Fetching article — may take a few seconds...")
-            fetched = extract_text_from_url(url_input.strip())
-            if not fetched:
-                st.error("Could not extract article text. Try another URL (or a simpler site).")
-                st.session_state.fetched_text = ""
-                st.session_state.fetched_title = ""
-            else:
-                st.session_state.fetched_text = fetched
-                # simple title: first non-empty line up to 120 chars
-                first_line = next((line.strip() for line in fetched.splitlines() if line.strip()), "")
-                st.session_state.fetched_title = first_line[:120]
-                st.success("Fetched article text.")
+            with st.spinner("📡 Fetching article..."):
+                fetched = extract_text_from_url(url_input.strip())
+                if not fetched:
+                    st.error("❌ Could not extract article text. Try another URL.")
+                    st.session_state.fetched_text = ""
+                    st.session_state.fetched_title = ""
+                else:
+                    st.session_state.fetched_text = fetched
+                    first_line = next((line.strip() for line in fetched.splitlines() if line.strip()), "")
+                    st.session_state.fetched_title = first_line[:120]
+                    st.success("✅ Article fetched successfully!")
 
-    # show extracted metrics if present
+    st.markdown('</div>', unsafe_allow_html=True)
+
+    # Show extracted metrics
     fetched_text = st.session_state.get("fetched_text", "")
     fetched_title = st.session_state.get("fetched_title", "")
+    
     if fetched_text:
         words, sentences = word_and_sentence_counts(fetched_text)
         est_seconds = estimate_reading_seconds(words, wpm=200)
         category = infer_category(fetched_text) or "General"
+        
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.markdown("### 📊 Article Analysis")
+        
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Words", f"{words:,}")
-        col2.metric("Sentences", f"{sentences:,}")
-        col3.metric("Est. read time", f"{int(est_seconds/60)} min {est_seconds%60} sec")
-        col4.metric("Category", category)
-        st.markdown("**Preview / Title:**")
-        st.write(fetched_title)
+        col1.metric("📝 Words", f"{words:,}")
+        col2.metric("💬 Sentences", f"{sentences:,}")
+        col3.metric("⏱️ Read Time", f"{int(est_seconds/60)}m {est_seconds%60}s")
+        col4.metric("🏷️ Category", category)
+        
+        st.markdown(f'<div class="preview-card"><strong>📄 Preview:</strong><br>{fetched_title}</div>', unsafe_allow_html=True)
 
-        # Add button saves article for logged-in user
-        if st.button("Add to my dashboard"):
-            if not st.session_state.user_id:
-                st.info("You are not signed in. Create an account or login to save this article.")
-            else:
-                save_article(
-                    st.session_state.user_id,
-                    st.session_state.url_input.strip(),
-                    fetched_title,
-                    category,
-                    words,
-                    sentences,
-                    est_seconds
-                )
-                st.success("Article saved to your dashboard.")
-                # clear fetched state optionally
-                st.session_state.fetched_text = ""
-                st.session_state.fetched_title = ""
-                st.session_state.url_input = ""
-                st.experimental_rerun()
+        col1, col2, col3 = st.columns([1,1,1])
+        with col2:
+            if st.button("➕ Add to Dashboard", use_container_width=True, type="primary"):
+                if not st.session_state.user_id:
+                    st.info("🔐 Sign in to save articles to your dashboard.")
+                else:
+                    save_article(
+                        st.session_state.user_id,
+                        st.session_state.url_input.strip(),
+                        fetched_title,
+                        category,
+                        words,
+                        sentences,
+                        est_seconds
+                    )
+                    st.success("🎉 Article saved to your dashboard!")
+                    st.session_state.fetched_text = ""
+                    st.session_state.fetched_title = ""
+                    st.session_state.url_input = ""
+                    time.sleep(1)
+                    st.rerun()
+        
+        st.markdown('</div>', unsafe_allow_html=True)
 
-    st.markdown("---")
-    st.subheader("Your saved articles")
+    # Saved articles section
+    st.markdown('<h2 class="section-header">📖 Your Reading Library</h2>', unsafe_allow_html=True)
+    
     if not st.session_state.user_id:
-        st.info("Sign up / Log in to see your saved articles and totals.")
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.info("🔐 Sign in to view your saved articles and reading statistics.")
+        st.markdown('</div>', unsafe_allow_html=True)
         return
 
     articles_df = fetch_user_articles(st.session_state.user_id)
+    
     if articles_df.empty:
-        st.info("No saved articles yet. Add articles from the box above.")
+        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+        st.info("📭 No saved articles yet. Add your first article above!")
+        st.markdown('</div>', unsafe_allow_html=True)
         return
 
-    # display table
-    display = articles_df.copy()
-    display["when"] = display["created_at"].dt.strftime("%Y-%m-%d %H:%M:%S")
-    display["time_minutes"] = (display["estimated_seconds"]/60).round(2)
-    display = display[["when","url","title","category","words","sentences","time_minutes"]]
-    display = display.rename(columns={
-        "when":"Added at",
-        "url":"URL",
-        "title":"Title (preview)",
-        "category":"Category",
-        "words":"Words",
-        "sentences":"Sentences",
-        "time_minutes":"Minutes"
-    })
-    st.dataframe(display, use_container_width=True)
-
-    # total time
+    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+    
+    # Display statistics
+    total_articles = len(articles_df)
+    total_words = int(articles_df["words"].sum())
     total_seconds = int(articles_df["estimated_seconds"].sum())
+    
+    stat_col1, stat_col2, stat_col3 = st.columns(3)
+    stat_col1.metric("📚 Total Articles", f"{total_articles}")
+    stat_col2.metric("📝 Total Words", f"{total_words:,}")
+    stat_col3.metric("⏱️ Total Time", f"{int(total_seconds/3600)}h {int((total_seconds%3600)/60)}m")
+    
     st.markdown("---")
-    st.metric("Total saved reading time", f"{int(total_seconds/60)} min {total_seconds%60} sec")
+    
+    # Display table
+    display = articles_df.copy()
+    display["when"] = display["created_at"].dt.strftime("%Y-%m-%d %H:%M")
+    display["time_minutes"] = (display["estimated_seconds"]/60).round(1)
+    display = display[["when","title","category","words","sentences","time_minutes","url"]]
+    display = display.rename(columns={
+        "when":"📅 Added",
+        "title":"📄 Title",
+        "category":"🏷️ Category",
+        "words":"📝 Words",
+        "sentences":"💬 Sentences",
+        "time_minutes":"⏱️ Minutes",
+        "url":"🔗 URL"
+    })
+    
+    st.dataframe(display, use_container_width=True, hide_index=True)
+    
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # Router
 if st.session_state.page == "auth" or st.session_state.user_id is None:
