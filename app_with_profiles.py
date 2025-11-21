@@ -350,7 +350,7 @@ def app_page():
 
         st.markdown("---")
         st.header("Reading speed")
-        wpm_choice = st.selectbox("WPM preset", ["200 (average)", "150 (slow)", "250 (fast)", "Custom"])
+        wpm_choice = st.selectbox("WPM preset", ["200 (average)", "150 (slow)", "250 (fast)", "Custom"]) 
         if wpm_choice == "200 (average)":
             wpm_val = 200
         elif wpm_choice == "150 (slow)":
