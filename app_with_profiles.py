@@ -514,17 +514,43 @@ def extract_text_from_url(url: str) -> tuple:
         title_tag = soup.find("title")
         if title_tag:
             title = title_tag.get_text(strip=True)
-        elif soup.find("h1"):
+        
+        # Check for og:title (better for social media sites)
+        og_title = soup.find("meta", property="og:title")
+        if og_title and og_title.get("content"):
+            title = og_title.get("content")
+        
+        # Try h1 as fallback
+        if not title and soup.find("h1"):
             title = soup.find("h1").get_text(strip=True)
         
         # Remove unwanted tags
-        for tag in soup(["script", "style", "noscript", "header", "footer", "svg", "nav", "iframe", "aside", "button"]):
+        for tag in soup(["script", "style", "noscript", "header", "footer", "svg", "nav", "iframe", "aside", "button", "form"]):
             tag.extract()
         
         article_text = []
         
+        # Substack-specific extraction
+        if "substack.com" in url.lower():
+            # Try Substack's post body class
+            post_body = soup.find("div", class_=lambda x: x and "body" in x.lower() if x else False)
+            if post_body:
+                for elem in post_body.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]):
+                    text = elem.get_text(strip=True)
+                    if text and len(text) > 15:
+                        article_text.append(text)
+            
+            # Try finding post content areas
+            if not article_text:
+                content_divs = soup.find_all("div", class_=lambda x: x and ("post" in x.lower() or "content" in x.lower()) if x else False)
+                for div in content_divs:
+                    for elem in div.find_all(["p", "h2", "h3", "h4"]):
+                        text = elem.get_text(strip=True)
+                        if text and len(text) > 15:
+                            article_text.append(text)
+        
         # Medium-specific extraction
-        if "medium.com" in url.lower():
+        if "medium.com" in url.lower() and not article_text:
             # Try Medium's data attributes
             paragraphs = soup.find_all(attrs={"data-selectable-paragraph": True})
             if paragraphs:
@@ -564,7 +590,8 @@ def extract_text_from_url(url: str) -> tuple:
         if not article_text:
             content_selectors = [
                 ".article-content", ".post-content", ".entry-content",
-                "#content", ".content", ".post-body", ".article-body"
+                "#content", ".content", ".post-body", ".article-body",
+                ".post__content"
             ]
             for selector in content_selectors:
                 container = soup.select_one(selector)
@@ -585,12 +612,18 @@ def extract_text_from_url(url: str) -> tuple:
         seen = set()
         cleaned_text = []
         for text in article_text:
+            # Skip common footer/header text
+            lower_text = text.lower()
+            if any(skip in lower_text for skip in ["cookie", "subscribe", "sign up", "follow us", "share this"]):
+                if len(text) < 100:  # Only skip if it's short
+                    continue
+            
             if text and text not in seen and len(text) > 20:
                 seen.add(text)
                 cleaned_text.append(text)
         
         final_text = "\n\n".join(cleaned_text)
-        if final_text.strip():
+        if final_text.strip() and len(final_text) > 200:  # Ensure we got substantial content
             return final_text.strip(), title, "beautifulsoup"
         
     except Exception as e:
@@ -780,23 +813,34 @@ def app_page():
                         
                         # Show helpful troubleshooting box
                         with st.expander("💡 Troubleshooting Tips", expanded=True):
-                            st.markdown("""
-                            **For Medium articles and other protected sites:**
+                            site_type = ""
+                            if "medium.com" in url_input.lower():
+                                site_type = "Medium"
+                            elif "substack.com" in url_input.lower():
+                                site_type = "Substack"
+                            elif "linkedin.com" in url_input.lower():
+                                site_type = "LinkedIn"
                             
-                            1. **Use the Manual Entry Method** (Recommended):
+                            tips = f"**For {site_type} articles:**\n\n" if site_type else "**Quick Solutions:**\n\n"
+                            
+                            st.markdown(tips + """
+                            1. **✅ Best Solution - Use Manual Entry:**
                                - Click the "**✍️ Paste Text**" tab above
-                               - Copy the article from Medium
-                               - Paste it manually with the title
+                               - Open the article in your browser
+                               - Select all text (Ctrl+A or Cmd+A)
+                               - Copy and paste here with the title
                             
-                            2. **Try removing URL parameters**:
+                            2. **Try simplifying the URL:**
                                - Remove everything after `?` in the URL
-                               - Example: Keep only `https://medium.com/@author/article-name`
+                               - Example: Keep only the base article URL
                             
-                            3. **Install newspaper3k** (Optional - for developers):
-                               ```
-                               pip install newspaper3k
-                               ```
-                               Then restart the app for better extraction.
+                            3. **Optional - Better extraction:**
+                               - Install newspaper3k: `pip install newspaper3k`
+                               - Restart the app for improved extraction
+                            
+                            **Why this happens:** Sites like Medium, Substack, and LinkedIn load content 
+                            dynamically with JavaScript, which basic web scrapers can't read. Manual entry 
+                            works 100% of the time! 📝
                             """)
                         
                         st.session_state.fetched_text = ""
@@ -815,7 +859,30 @@ def app_page():
     
     with tab2:
         st.markdown('<div class="subsection-header" style="font-size: 1.2em; margin-top: 15px;">📝 Manual Article Entry</div>', unsafe_allow_html=True)
-        st.info("💡 Perfect for Medium, LinkedIn, paywalled sites, or when automatic extraction doesn't work.")
+        
+        # Instructions with visual steps
+        with st.expander("📖 How to manually add an article (3 easy steps)", expanded=False):
+            st.markdown("""
+            ### Quick Guide:
+            
+            **Step 1:** Open the article in your browser
+            
+            **Step 2:** Select all text
+            - **Windows/Linux:** Press `Ctrl + A`
+            - **Mac:** Press `Cmd + A`
+            
+            **Step 3:** Copy & paste here
+            - **Windows/Linux:** `Ctrl + C` then `Ctrl + V`
+            - **Mac:** `Cmd + C` then `Cmd + V`
+            
+            ---
+            
+            ✅ **Works perfectly for:** Medium, Substack, LinkedIn, paywalled sites, PDFs (copy text first)
+            
+            ⏱️ **Takes:** ~30 seconds
+            """)
+        
+        st.info("💡 This method works 100% of the time for any article you can read!")
         
         col1, col2 = st.columns([2, 1])
         with col1:
@@ -823,13 +890,19 @@ def app_page():
         with col2:
             manual_category = st.text_input("🏷️ Category (optional)", placeholder="e.g., Technology", key="manual_category")
         
-        manual_url = st.text_input("🔗 Article URL (optional)", placeholder="https://medium.com/@author/article-name", key="manual_url")
+        manual_url = st.text_input("🔗 Article URL (optional)", placeholder="https://example.com/article", key="manual_url")
         manual_text = st.text_area("📝 Article Content", 
                                    height=350, 
-                                   placeholder="Paste the full article text here...\n\nTip: Select all text from the article (Ctrl+A or Cmd+A) and paste it here.",
+                                   placeholder="Paste the full article text here...\n\nTip: Select all (Ctrl+A / Cmd+A), copy, and paste.",
                                    key="manual_text")
         
-        st.markdown('<p class="caption">* Title and content are required</p>', unsafe_allow_html=True)
+        # Show character count
+        if manual_text:
+            char_count = len(manual_text)
+            word_count_preview = len(manual_text.split())
+            st.caption(f"✍️ {char_count:,} characters · ~{word_count_preview:,} words")
+        else:
+            st.markdown('<p class="caption">* Title and content are required</p>', unsafe_allow_html=True)
         
         col1, col2, col3 = st.columns([1, 1, 1])
         with col2:
