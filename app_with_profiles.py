@@ -60,7 +60,7 @@ def load_custom_css():
     
     /* Main app styling with better background */
     .main {
-        background: #0a0e27;
+        background: #ffffff;
         padding: 0;
     }
     
@@ -71,8 +71,8 @@ def load_custom_css():
         top: 0;
         left: 0;
         right: 0;
-        height: 400px;
-        background: linear-gradient(180deg, rgba(102, 126, 234, 0.15) 0%, transparent 100%);
+        height: 300px;
+        background: linear-gradient(180deg, rgba(102, 126, 234, 0.08) 0%, transparent 100%);
         pointer-events: none;
         z-index: 0;
     }
@@ -110,31 +110,30 @@ def load_custom_css():
         font-size: 3.8em;
         font-weight: 800;
         margin: 0 0 15px 0;
-        background: linear-gradient(135deg, #ffffff 0%, #e0e7ff 100%);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
         letter-spacing: -1px;
-        text-shadow: 0 0 40px rgba(102, 126, 234, 0.3);
     }
     
     .app-subtitle {
         font-size: 1.3em;
-        color: rgba(255, 255, 255, 0.9);
+        color: #5a5a5a;
         margin: 0;
         font-weight: 400;
     }
     
     /* User info bar with better visibility */
     .user-info-bar {
-        background: rgba(255, 255, 255, 0.08);
+        background: rgba(102, 126, 234, 0.08);
         backdrop-filter: blur(10px);
         border-radius: 20px;
         padding: 15px 25px;
         margin: 0 auto 30px auto;
         max-width: 1200px;
-        border: 1px solid rgba(255, 255, 255, 0.15);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+        border: 1px solid rgba(102, 126, 234, 0.15);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
     }
     
     .user-badge {
@@ -181,13 +180,12 @@ def load_custom_css():
     
     /* Section headers with better visibility */
     .section-header {
-        color: white;
+        color: #1a1a2e;
         font-size: 2.2em;
         font-weight: 700;
         margin: 40px 0 25px 0;
         text-align: center;
         letter-spacing: -0.5px;
-        text-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     }
     
     .subsection-header {
@@ -268,25 +266,25 @@ def load_custom_css():
     }
     
     .stTabs [data-baseweb="tab"] {
-        background: rgba(255, 255, 255, 0.12);
-        color: rgba(255, 255, 255, 0.9);
+        background: #f5f5f5;
+        color: #5a5a5a;
         border-radius: 12px;
         padding: 12px 28px;
         font-weight: 600;
-        border: 2px solid rgba(255, 255, 255, 0.2);
+        border: 2px solid #e0e0e0;
         transition: all 0.3s ease;
     }
     
     .stTabs [data-baseweb="tab"]:hover {
-        background: rgba(255, 255, 255, 0.2);
-        border-color: rgba(255, 255, 255, 0.4);
+        background: #ebebeb;
+        border-color: #d0d0d0;
     }
     
     .stTabs [aria-selected="true"] {
-        background: white !important;
-        color: #1a1a2e !important;
-        border-color: white !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        color: white !important;
+        border-color: transparent !important;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
     }
     
     /* Radio button styling */
