@@ -30,6 +30,13 @@ from PyPDF2 import PdfReader
 import docx
 from passlib.hash import pbkdf2_sha256
 
+# Try to import newspaper3k for better article extraction
+try:
+    from newspaper import Article as NewspaperArticle
+    NEWSPAPER_AVAILABLE = True
+except ImportError:
+    NEWSPAPER_AVAILABLE = False
+
 # Ensure NLTK data
 for pkg in ("punkt", "punkt_tab"):
     try:
@@ -292,55 +299,83 @@ def get_profile(user_id: int):
     return dict(row)
 
 # -------------------- Article extraction & utils --------------------
-def extract_text_from_url(url: str) -> str:
+def extract_text_from_url(url: str) -> tuple:
+    """
+    Extract article text from URL. Returns (text, title, success_method)
+    """
+    # Strategy 1: Try newspaper3k first (best for news/blog articles)
+    if NEWSPAPER_AVAILABLE:
+        try:
+            article = NewspaperArticle(url)
+            article.download()
+            article.parse()
+            if article.text and len(article.text.strip()) > 100:
+                return article.text.strip(), article.title or "", "newspaper3k"
+        except Exception:
+            pass
+    
+    # Strategy 2: Enhanced BeautifulSoup extraction
     try:
         headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.5",
-            "Accept-Encoding": "gzip, deflate",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "DNT": "1",
             "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1"
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Cache-Control": "max-age=0",
         }
-        resp = requests.get(url, headers=headers, timeout=15)
+        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         
+        # Extract title
+        title = ""
+        title_tag = soup.find("title")
+        if title_tag:
+            title = title_tag.get_text(strip=True)
+        elif soup.find("h1"):
+            title = soup.find("h1").get_text(strip=True)
+        
         # Remove unwanted tags
-        for tag in soup(["script", "style", "noscript", "header", "footer", "svg", "nav", "iframe"]):
+        for tag in soup(["script", "style", "noscript", "header", "footer", "svg", "nav", "iframe", "aside", "button"]):
             tag.extract()
         
         article_text = []
         
-        # Strategy 1: Medium-specific selectors
+        # Medium-specific extraction
         if "medium.com" in url.lower():
-            # Try multiple Medium-specific selectors
-            medium_selectors = [
-                "article section",
-                "article div",
-                ".postArticle-content",
-                "[data-selectable-paragraph]"
-            ]
-            for selector in medium_selectors:
-                elements = soup.select(selector)
-                if elements:
-                    for elem in elements:
-                        paragraphs = elem.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6"])
-                        article_text.extend([p.get_text(strip=True) for p in paragraphs if p.get_text(strip=True)])
-                    if article_text:
-                        break
+            # Try Medium's data attributes
+            paragraphs = soup.find_all(attrs={"data-selectable-paragraph": True})
+            if paragraphs:
+                for p in paragraphs:
+                    text = p.get_text(strip=True)
+                    if text and len(text) > 15:
+                        article_text.append(text)
+            
+            # Try Medium's article structure
+            if not article_text:
+                article_sections = soup.find_all("section")
+                for section in article_sections:
+                    for elem in section.find_all(["p", "h1", "h2", "h3", "h4"]):
+                        text = elem.get_text(strip=True)
+                        if text and len(text) > 15:
+                            article_text.append(text)
         
-        # Strategy 2: Look for article tag
+        # Standard article extraction
         if not article_text:
             article = soup.find("article")
             if article:
-                # Get all text-containing elements
                 for elem in article.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]):
                     text = elem.get_text(strip=True)
-                    if text and len(text) > 20:  # Filter out very short snippets
+                    if text and len(text) > 20:
                         article_text.append(text)
         
-        # Strategy 3: Look for main tag
+        # Main tag extraction
         if not article_text:
             main = soup.find("main")
             if main:
@@ -349,14 +384,11 @@ def extract_text_from_url(url: str) -> str:
                     if text and len(text) > 20:
                         article_text.append(text)
         
-        # Strategy 4: Look for common content containers
+        # Common content containers
         if not article_text:
             content_selectors = [
-                ".article-content",
-                ".post-content",
-                ".entry-content",
-                "#content",
-                ".content"
+                ".article-content", ".post-content", ".entry-content",
+                "#content", ".content", ".post-body", ".article-body"
             ]
             for selector in content_selectors:
                 container = soup.select_one(selector)
@@ -368,7 +400,7 @@ def extract_text_from_url(url: str) -> str:
                     if article_text:
                         break
         
-        # Strategy 5: Fallback to all paragraphs
+        # Fallback to all meaningful paragraphs
         if not article_text:
             all_paragraphs = soup.find_all("p")
             article_text = [p.get_text(strip=True) for p in all_paragraphs if len(p.get_text(strip=True)) > 30]
@@ -382,9 +414,13 @@ def extract_text_from_url(url: str) -> str:
                 cleaned_text.append(text)
         
         final_text = "\n\n".join(cleaned_text)
-        return final_text if final_text.strip() else ""
+        if final_text.strip():
+            return final_text.strip(), title, "beautifulsoup"
+        
     except Exception as e:
-        return ""
+        pass
+    
+    return "", "", "failed"
 
 def word_and_sentence_counts(text: str):
     sentences = sent_tokenize(text)
@@ -557,38 +593,78 @@ def app_page():
                 st.warning("⚠️ Please paste a valid URL.")
             else:
                 with st.spinner("📡 Fetching article..."):
-                    fetched = extract_text_from_url(url_input.strip())
-                    if not fetched:
+                    fetched_text, fetched_title, method = extract_text_from_url(url_input.strip())
+                    if not fetched_text:
                         st.error("❌ Could not extract article text. The site may be JavaScript-heavy or have anti-scraping protection.")
-                        st.info("💡 **Tip:** Try the 'Paste Text' tab to manually add the article content, or remove URL query parameters (everything after '?')")
+                        
+                        # Show helpful troubleshooting box
+                        with st.expander("💡 Troubleshooting Tips", expanded=True):
+                            st.markdown("""
+                            **For Medium articles and other protected sites:**
+                            
+                            1. **Use the Manual Entry Method** (Recommended):
+                               - Click the "**✍️ Paste Text**" tab above
+                               - Copy the article from Medium
+                               - Paste it manually with the title
+                            
+                            2. **Try removing URL parameters**:
+                               - Remove everything after `?` in the URL
+                               - Example: Keep only `https://medium.com/@author/article-name`
+                            
+                            3. **Install newspaper3k** (Optional - for developers):
+                               ```
+                               pip install newspaper3k
+                               ```
+                               Then restart the app for better extraction.
+                            """)
+                        
                         st.session_state.fetched_text = ""
                         st.session_state.fetched_title = ""
                     else:
-                        st.session_state.fetched_text = fetched
-                        first_line = next((line.strip() for line in fetched.splitlines() if line.strip()), "")
-                        st.session_state.fetched_title = first_line[:120]
+                        st.session_state.fetched_text = fetched_text
+                        # Use extracted title or fallback to first line
+                        if not fetched_title:
+                            first_line = next((line.strip() for line in fetched_text.splitlines() if line.strip()), "")
+                            fetched_title = first_line[:120]
+                        st.session_state.fetched_title = fetched_title
                         st.session_state.manual_mode = False
-                        st.success("✅ Article fetched successfully!")
+                        st.success(f"✅ Article fetched successfully using {method}!")
+                        if not NEWSPAPER_AVAILABLE:
+                            st.info("💡 Install `newspaper3k` for even better article extraction from news sites and Medium.")
     
     with tab2:
-        st.info("📝 For sites that don't work with automatic extraction (like Medium), paste the article text directly here.")
-        manual_title = st.text_input("Article Title", placeholder="Enter article title", key="manual_title")
-        manual_url = st.text_input("Article URL (optional)", placeholder="https://...", key="manual_url")
-        manual_text = st.text_area("Article Text", height=300, placeholder="Paste the full article text here...", key="manual_text")
+        st.markdown("### 📝 Manual Article Entry")
+        st.info("💡 Perfect for Medium, LinkedIn, paywalled sites, or when automatic extraction doesn't work.")
         
-        col1, col2, col3 = st.columns([1,1,2])
+        col1, col2 = st.columns([2, 1])
         with col1:
-            if st.button("📊 Analyze Text", use_container_width=True, key="manual_btn"):
+            manual_title = st.text_input("📄 Article Title *", placeholder="Enter the article title here", key="manual_title")
+        with col2:
+            manual_category = st.text_input("🏷️ Category (optional)", placeholder="e.g., Technology", key="manual_category")
+        
+        manual_url = st.text_input("🔗 Article URL (optional)", placeholder="https://medium.com/@author/article-name", key="manual_url")
+        manual_text = st.text_area("📝 Article Content *", 
+                                   height=350, 
+                                   placeholder="Paste the full article text here...\n\nTip: Select all text from the article (Ctrl+A or Cmd+A) and paste it here.",
+                                   key="manual_text")
+        
+        st.caption("* Required fields")
+        
+        col1, col2, col3 = st.columns([1, 1, 1])
+        with col2:
+            if st.button("📊 Analyze Pasted Text", use_container_width=True, type="primary", key="manual_btn"):
                 if not manual_text.strip():
-                    st.warning("⚠️ Please paste some article text.")
+                    st.warning("⚠️ Please paste the article text.")
                 elif not manual_title.strip():
                     st.warning("⚠️ Please enter an article title.")
                 else:
                     st.session_state.fetched_text = manual_text.strip()
                     st.session_state.fetched_title = manual_title.strip()
-                    st.session_state.url_input = manual_url.strip() if manual_url.strip() else "manual-entry"
+                    st.session_state.url_input = manual_url.strip() if manual_url.strip() else f"manual-entry-{int(time.time())}"
                     st.session_state.manual_mode = True
+                    st.session_state.manual_category = manual_category.strip() if manual_category.strip() else None
                     st.success("✅ Text analyzed successfully!")
+                    st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
 
