@@ -1,44 +1,59 @@
 """
-Streamlit Article Reader — Save articles to profile dashboard
-
-Flow:
-1. User pastes a website URL.
-2. App extracts article text, shows words, sentences, estimated read time.
-3. User clicks ADD to save the article (URL, title/snippet, category, words, sentences, time, timestamp).
-4. Dashboard shows saved articles for signed-in user and total time.
-
-Notes:
-- Uses local SQLite DB: reader_app.db
-- Category is inferred as the top TF-IDF term (simple heuristic).
-- For JS-heavy sites, extraction may fail; consider 'trafilatura' later.
+Reader App — full single-file Streamlit app
+Features:
+- Signup / Login with SQLite
+- Small centered login box (positioned visually behind header)
+- Input modes: Website URL, Paste text, Upload (.txt .pdf .docx)
+- Robust extraction: newspaper3k (optional) + BeautifulSoup heuristics
+- Word & sentence counts, estimated read time
+- Simple category inference (top TF-IDF terms)
+- Add to Dashboard: saves (url/title/category/words/sentences/seconds/timestamp)
+- Timer / tracker (Start/Stop / Add minutes)
+- Per-user dashboard with totals, charts, CSV export
+- CSS for layout; login box positioned up behind header (negative margin)
+- Uses SQLite DB file: reader_app.db (created automatically)
+- Optional sample image path (local) for header preview: SAMPLE_IMAGE
 """
 
 import streamlit as st
 import sqlite3
 import time
-from io import BytesIO
 import datetime as dt
+from io import BytesIO
 import pandas as pd
+import numpy as np
+import requests
+from bs4 import BeautifulSoup
 import nltk
 from nltk.tokenize import sent_tokenize, word_tokenize
 from sklearn.feature_extraction.text import TfidfVectorizer
 from collections import defaultdict
-import numpy as np
-import requests
-from bs4 import BeautifulSoup
-from PyPDF2 import PdfReader
-import docx
 from passlib.hash import pbkdf2_sha256
 
-# Try to import newspaper3k for better article extraction
+# Optional imports (handle gracefully)
 try:
     from newspaper import Article as NewspaperArticle
     NEWSPAPER_AVAILABLE = True
-except ImportError:
+except Exception:
     NEWSPAPER_AVAILABLE = False
 
-# Ensure NLTK data
-for pkg in ("punkt", "punkt_tab"):
+try:
+    from PyPDF2 import PdfReader
+    PYPDF_AVAILABLE = True
+except Exception:
+    PYPDF_AVAILABLE = False
+
+try:
+    import docx
+    DOCX_AVAILABLE = True
+except Exception:
+    DOCX_AVAILABLE = False
+
+# Sample image path (from conversation assets) — you can remove or replace it
+SAMPLE_IMAGE = "/mnt/data/38296530-7105-43ab-9705-14f13f6b28e0.png"
+
+# Ensure NLTK punkt tokenizer
+for pkg in ("punkt",):
     try:
         nltk.data.find(f"tokenizers/{pkg}")
     except LookupError:
@@ -46,373 +61,7 @@ for pkg in ("punkt", "punkt_tab"):
 
 DB_FILE = "reader_app.db"
 
-# -------------------- Custom CSS --------------------
-def load_custom_css():
-    st.markdown("""
-    <style>
-    /* Import Google Fonts */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-    
-    /* Global styles */
-    * {
-        font-family: 'Inter', sans-serif;
-    }
-    
-    /* Main app styling with better background */
-    .main {
-        background: #ffffff;
-        padding: 0;
-    }
-    
-    /* Add decorative gradient overlay */
-    .main::before {
-        content: '';
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 300px;
-        background: linear-gradient(180deg, rgba(102, 126, 234, 0.08) 0%, transparent 100%);
-        pointer-events: none;
-        z-index: 0;
-    }
-    
-    /* Remove default Streamlit padding */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 3rem;
-        max-width: 1200px;
-        position: relative;
-        z-index: 1;
-    }
-    
-    /* Card containers with better contrast */
-    .glass-card {
-        background: rgba(255, 255, 255, 0.98);
-        backdrop-filter: blur(20px);
-        border-radius: 24px;
-        padding: 35px;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        margin: 25px 0;
-    }
-    
-    /* Modern header styling */
-    .app-header {
-        text-align: center;
-        padding: 60px 20px 40px 20px;
-        margin-bottom: 20px;
-        position: relative;
-        z-index: 1;
-    }
-    
-    .app-title {
-        font-size: 3.8em;
-        font-weight: 800;
-        margin: 0 0 15px 0;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        letter-spacing: -1px;
-    }
-    
-    .app-subtitle {
-        font-size: 1.3em;
-        color: #5a5a5a;
-        margin: 0;
-        font-weight: 400;
-    }
-    
-    /* User info bar with better visibility */
-    .user-info-bar {
-        background: rgba(102, 126, 234, 0.08);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 15px 25px;
-        margin: 0 auto 30px auto;
-        max-width: 1200px;
-        border: 1px solid rgba(102, 126, 234, 0.15);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
-    }
-    
-    .user-badge {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 12px 24px;
-        border-radius: 30px;
-        display: inline-flex;
-        align-items: center;
-        gap: 8px;
-        font-weight: 600;
-        font-size: 0.95em;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.5);
-    }
-    
-    /* Metric cards with better contrast */
-    div[data-testid="metric-container"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        border-radius: 20px;
-        padding: 25px;
-        box-shadow: 0 8px 32px rgba(102, 126, 234, 0.4);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        transition: transform 0.2s ease;
-    }
-    
-    div[data-testid="metric-container"]:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 12px 40px rgba(102, 126, 234, 0.6);
-    }
-    
-    div[data-testid="metric-container"] label {
-        color: rgba(255, 255, 255, 0.95) !important;
-        font-weight: 600;
-        font-size: 0.95em;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    
-    div[data-testid="metric-container"] [data-testid="stMetricValue"] {
-        color: white !important;
-        font-size: 2.2em;
-        font-weight: 800;
-    }
-    
-    /* Section headers with better visibility */
-    .section-header {
-        color: #1a1a2e;
-        font-size: 2.2em;
-        font-weight: 700;
-        margin: 40px 0 25px 0;
-        text-align: center;
-        letter-spacing: -0.5px;
-    }
-    
-    .subsection-header {
-        color: #1a1a2e;
-        font-size: 1.5em;
-        font-weight: 700;
-        margin: 0 0 20px 0;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-    }
-    
-    /* Button styling with better contrast */
-    .stButton>button {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        border: none;
-        border-radius: 14px;
-        padding: 14px 32px;
-        font-weight: 600;
-        font-size: 1em;
-        transition: all 0.3s ease;
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.5);
-        border: 2px solid transparent;
-    }
-    
-    .stButton>button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 32px rgba(102, 126, 234, 0.7);
-        border: 2px solid rgba(255, 255, 255, 0.2);
-    }
-    
-    .stButton>button:active {
-        transform: translateY(0px);
-    }
-    
-    /* Primary button variant */
-    .stButton>button[kind="primary"] {
-        background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-        box-shadow: 0 6px 20px rgba(245, 87, 108, 0.5);
-    }
-    
-    .stButton>button[kind="primary"]:hover {
-        box-shadow: 0 8px 32px rgba(245, 87, 108, 0.7);
-    }
-    
-    /* Input styling */
-    .stTextInput>div>div>input,
-    .stTextArea>div>div>textarea {
-        border-radius: 14px;
-        border: 2px solid #e0e0e0;
-        padding: 14px 18px;
-        font-size: 1em;
-        transition: all 0.3s ease;
-        background: white;
-    }
-    
-    .stTextInput>div>div>input:focus,
-    .stTextArea>div>div>textarea:focus {
-        border-color: #667eea;
-        box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.15);
-        outline: none;
-    }
-    
-    .stTextInput>label,
-    .stTextArea>label {
-        font-weight: 600;
-        color: #1a1a2e;
-        font-size: 0.95em;
-        margin-bottom: 8px;
-    }
-    
-    /* Tabs styling with better visibility */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 8px;
-        background: transparent;
-        border-bottom: none;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background: #f5f5f5;
-        color: #5a5a5a;
-        border-radius: 12px;
-        padding: 12px 28px;
-        font-weight: 600;
-        border: 2px solid #e0e0e0;
-        transition: all 0.3s ease;
-    }
-    
-    .stTabs [data-baseweb="tab"]:hover {
-        background: #ebebeb;
-        border-color: #d0d0d0;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
-        color: white !important;
-        border-color: transparent !important;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-    }
-    
-    /* Radio button styling */
-    .stRadio>div {
-        background: transparent;
-        padding: 15px;
-        border-radius: 14px;
-        gap: 12px;
-    }
-    
-    .stRadio>div>label {
-        background: rgba(255, 255, 255, 0.12);
-        padding: 12px 24px;
-        border-radius: 12px;
-        color: rgba(255, 255, 255, 0.9);
-        font-weight: 600;
-        border: 2px solid rgba(255, 255, 255, 0.2);
-        transition: all 0.3s ease;
-    }
-    
-    .stRadio>div>label:hover {
-        background: rgba(255, 255, 255, 0.18);
-        border-color: rgba(255, 255, 255, 0.3);
-    }
-    
-    .stRadio>div>label[data-checked="true"] {
-        background: white;
-        color: #1a1a2e;
-        border-color: white;
-        box-shadow: 0 4px 15px rgba(255, 255, 255, 0.3);
-    }
-    
-    /* Preview card */
-    .preview-card {
-        background: linear-gradient(135deg, #f5f7fa 0%, #e8ecf1 100%);
-        border-left: 5px solid #667eea;
-        padding: 24px;
-        border-radius: 14px;
-        margin: 20px 0;
-        font-size: 1.05em;
-        line-height: 1.6;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    }
-    
-    /* Dataframe styling */
-    .stDataFrame {
-        border-radius: 14px;
-        overflow: hidden;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-    }
-    
-    /* Messages styling */
-    .stSuccess, .stInfo, .stWarning, .stError {
-        border-radius: 14px;
-        padding: 16px 20px;
-        font-weight: 500;
-    }
-    
-    /* Expander styling */
-    .streamlit-expanderHeader {
-        background: rgba(102, 126, 234, 0.12);
-        border-radius: 12px;
-        font-weight: 600;
-        padding: 14px 18px;
-    }
-    
-    /* Auth container with better contrast */
-    .auth-container {
-        max-width: 480px;
-        margin: 40px auto;
-        background: white;
-        border-radius: 28px;
-        padding: 50px 45px;
-        box-shadow: 0 25px 80px rgba(0, 0, 0, 0.5);
-        border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-    
-    .auth-title {
-        font-size: 2em;
-        font-weight: 700;
-        color: #1a1a2e;
-        margin-bottom: 10px;
-        text-align: center;
-    }
-    
-    .auth-subtitle {
-        color: #666;
-        text-align: center;
-        margin-bottom: 30px;
-        font-size: 1.05em;
-    }
-    
-    /* Caption styling */
-    .caption {
-        color: #999;
-        font-size: 0.9em;
-        font-style: italic;
-        margin-top: 8px;
-    }
-    
-    /* Hide Streamlit branding */
-    #MainMenu {visibility: hidden;}
-    footer {visibility: hidden;}
-    header {visibility: hidden;}
-    
-    /* Scrollbar styling */
-    ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.05);
-        border-radius: 10px;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: rgba(102, 126, 234, 0.5);
-        border-radius: 10px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: rgba(102, 126, 234, 0.7);
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# -------------------- DB init --------------------
+# -------------------- DB helpers --------------------
 def get_conn():
     conn = sqlite3.connect(DB_FILE, check_same_thread=False)
     conn.row_factory = sqlite3.Row
@@ -421,7 +70,6 @@ def get_conn():
 def init_db():
     conn = get_conn()
     cur = conn.cursor()
-    # Users table (with display_name)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -431,7 +79,6 @@ def init_db():
         email TEXT,
         created_at TEXT NOT NULL
     )""")
-    # Articles table - stores saved articles metadata
     cur.execute("""
     CREATE TABLE IF NOT EXISTS articles (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -445,28 +92,36 @@ def init_db():
         created_at TEXT NOT NULL,
         FOREIGN KEY(user_id) REFERENCES users(id)
     )""")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS reading_sessions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        seconds INTEGER NOT NULL,
+        source TEXT,
+        words_count INTEGER,
+        created_at TEXT NOT NULL,
+        FOREIGN KEY(user_id) REFERENCES users(id)
+    )""")
     conn.commit()
     conn.close()
 
 init_db()
 
-# -------------------- Auth --------------------
-def create_user(username: str, password: str, display_name: str = None, email: str = None):
+# -------------------- Auth helpers --------------------
+def create_user(username: str, password: str, display_name: str=None, email: str=None):
     username = (username or "").strip()
     if not username or not password:
-        return False, "Username and password are required."
+        return False, "Username and password required"
     conn = get_conn()
     cur = conn.cursor()
     try:
-        password_hash = pbkdf2_sha256.hash(password)
-        cur.execute(
-            "INSERT INTO users (username, password_hash, display_name, email, created_at) VALUES (?, ?, ?, ?, ?)",
-            (username, password_hash, display_name, email, dt.datetime.utcnow().isoformat())
-        )
+        ph = pbkdf2_sha256.hash(password)
+        cur.execute("INSERT INTO users (username, password_hash, display_name, email, created_at) VALUES (?, ?, ?, ?, ?)",
+                    (username, ph, display_name, email, dt.datetime.utcnow().isoformat()))
         conn.commit()
-        return True, "Account created."
+        return True, "Account created"
     except sqlite3.IntegrityError:
-        return False, "Username already exists."
+        return False, "Username already exists"
     finally:
         conn.close()
 
@@ -495,201 +150,176 @@ def get_profile(user_id: int):
         return None
     return dict(row)
 
-# -------------------- Article extraction & utils --------------------
-def extract_text_from_url(url: str) -> tuple:
-    """
-    Extract article text from URL. Returns (text, title, success_method)
-    """
-    # Strategy 1: Try newspaper3k first (best for news/blog articles)
-    if NEWSPAPER_AVAILABLE:
-        try:
-            article = NewspaperArticle(url)
-            article.download()
-            article.parse()
-            if article.text and len(article.text.strip()) > 100:
-                return article.text.strip(), article.title or "", "newspaper3k"
-        except Exception:
-            pass
-    
-    # Strategy 2: Enhanced BeautifulSoup extraction
+# -------------------- Article extraction --------------------
+def _extract_text_newspaper(url: str):
     try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "DNT": "1",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-            "Sec-Fetch-Dest": "document",
-            "Sec-Fetch-Mode": "navigate",
-            "Sec-Fetch-Site": "none",
-            "Cache-Control": "max-age=0",
-        }
-        resp = requests.get(url, headers=headers, timeout=15, allow_redirects=True)
+        art = NewspaperArticle(url)
+        art.download()
+        art.parse()
+        text = (art.text or "").strip()
+        title = (art.title or "").strip()
+        if text and len(text) > 80:
+            return text, title or ""
+    except Exception:
+        pass
+    return "", ""
+
+def _extract_text_bs(url: str, min_len=200):
+    try:
+        headers = {"User-Agent":"Mozilla/5.0"}
+        resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
-        
-        # Extract title
+        # get title
         title = ""
-        title_tag = soup.find("title")
-        if title_tag:
-            title = title_tag.get_text(strip=True)
-        
-        # Check for og:title (better for social media sites)
-        og_title = soup.find("meta", property="og:title")
-        if og_title and og_title.get("content"):
-            title = og_title.get("content")
-        
-        # Try h1 as fallback
-        if not title and soup.find("h1"):
-            title = soup.find("h1").get_text(strip=True)
-        
-        # Remove unwanted tags
-        for tag in soup(["script", "style", "noscript", "header", "footer", "svg", "nav", "iframe", "aside", "button", "form"]):
+        t = soup.find("meta", property="og:title")
+        if t and t.get("content"):
+            title = t.get("content").strip()
+        if not title and soup.title:
+            title = soup.title.get_text(strip=True)
+        # remove unwanted tags
+        for tag in soup(["script","style","noscript","header","footer","svg","nav","iframe","aside","form","button"]):
             tag.extract()
-        
+        # try article/main
         article_text = []
-        
-        # Substack-specific extraction
-        if "substack.com" in url.lower():
-            # Try Substack's post body class
-            post_body = soup.find("div", class_=lambda x: x and "body" in x.lower() if x else False)
-            if post_body:
-                for elem in post_body.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]):
-                    text = elem.get_text(strip=True)
-                    if text and len(text) > 15:
-                        article_text.append(text)
-            
-            # Try finding post content areas
-            if not article_text:
-                content_divs = soup.find_all("div", class_=lambda x: x and ("post" in x.lower() or "content" in x.lower()) if x else False)
-                for div in content_divs:
-                    for elem in div.find_all(["p", "h2", "h3", "h4"]):
-                        text = elem.get_text(strip=True)
-                        if text and len(text) > 15:
-                            article_text.append(text)
-        
-        # Medium-specific extraction
-        if "medium.com" in url.lower() and not article_text:
-            # Try Medium's data attributes
-            paragraphs = soup.find_all(attrs={"data-selectable-paragraph": True})
-            if paragraphs:
-                for p in paragraphs:
-                    text = p.get_text(strip=True)
-                    if text and len(text) > 15:
-                        article_text.append(text)
-            
-            # Try Medium's article structure
-            if not article_text:
-                article_sections = soup.find_all("section")
-                for section in article_sections:
-                    for elem in section.find_all(["p", "h1", "h2", "h3", "h4"]):
-                        text = elem.get_text(strip=True)
-                        if text and len(text) > 15:
-                            article_text.append(text)
-        
-        # Standard article extraction
-        if not article_text:
-            article = soup.find("article")
-            if article:
-                for elem in article.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6", "li"]):
-                    text = elem.get_text(strip=True)
-                    if text and len(text) > 20:
-                        article_text.append(text)
-        
-        # Main tag extraction
+        article = soup.find("article")
+        if article:
+            for p in article.find_all(["p","h1","h2","h3","li"]):
+                txt = p.get_text(" ", strip=True)
+                if txt and len(txt)>30:
+                    article_text.append(txt)
         if not article_text:
             main = soup.find("main")
             if main:
-                for elem in main.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6"]):
-                    text = elem.get_text(strip=True)
-                    if text and len(text) > 20:
-                        article_text.append(text)
-        
-        # Common content containers
+                for p in main.find_all(["p","h1","h2","h3","li"]):
+                    txt = p.get_text(" ", strip=True)
+                    if txt and len(txt)>30:
+                        article_text.append(txt)
         if not article_text:
-            content_selectors = [
-                ".article-content", ".post-content", ".entry-content",
-                "#content", ".content", ".post-body", ".article-body",
-                ".post__content"
-            ]
-            for selector in content_selectors:
-                container = soup.select_one(selector)
-                if container:
-                    for elem in container.find_all(["p", "h1", "h2", "h3", "h4", "h5", "h6"]):
-                        text = elem.get_text(strip=True)
-                        if text and len(text) > 20:
-                            article_text.append(text)
+            # fallback to important selectors
+            selectors = [".article-content", ".post-content", ".entry-content", ".content", ".post-body", ".article-body"]
+            for sel in selectors:
+                cont = soup.select_one(sel)
+                if cont:
+                    for p in cont.find_all(["p","h1","h2","h3","li"]):
+                        txt = p.get_text(" ", strip=True)
+                        if txt and len(txt)>30:
+                            article_text.append(txt)
                     if article_text:
                         break
-        
-        # Fallback to all meaningful paragraphs
         if not article_text:
-            all_paragraphs = soup.find_all("p")
-            article_text = [p.get_text(strip=True) for p in all_paragraphs if len(p.get_text(strip=True)) > 30]
-        
-        # Clean up and deduplicate
+            # last fallback: all paragraphs longer than 50 chars
+            ps = soup.find_all("p")
+            for p in ps:
+                txt = p.get_text(" ", strip=True)
+                if txt and len(txt) > 50:
+                    article_text.append(txt)
+        # clean and dedupe
+        cleaned = []
         seen = set()
-        cleaned_text = []
-        for text in article_text:
-            # Skip common footer/header text
-            lower_text = text.lower()
-            if any(skip in lower_text for skip in ["cookie", "subscribe", "sign up", "follow us", "share this"]):
-                if len(text) < 100:  # Only skip if it's short
-                    continue
-            
-            if text and text not in seen and len(text) > 20:
-                seen.add(text)
-                cleaned_text.append(text)
-        
-        final_text = "\n\n".join(cleaned_text)
-        if final_text.strip() and len(final_text) > 200:  # Ensure we got substantial content
-            return final_text.strip(), title, "beautifulsoup"
-        
-    except Exception as e:
+        for block in article_text:
+            if block not in seen:
+                seen.add(block)
+                cleaned.append(block)
+        joined = "\n\n".join(cleaned)
+        if joined and len(joined) >= min_len:
+            return joined, title
+    except Exception:
         pass
-    
+    return "", ""
+
+def extract_text_from_url(url: str):
+    # Try newspaper first (if installed)
+    if NEWSPAPER_AVAILABLE:
+        txt, title = _extract_text_newspaper(url)
+        if txt:
+            return txt, title, "newspaper3k"
+    # Try BeautifulSoup heuristics
+    txt, title = _extract_text_bs(url)
+    if txt:
+        return txt, title, "beautifulsoup"
+    # failed
     return "", "", "failed"
 
-def word_and_sentence_counts(text: str):
-    sentences = sent_tokenize(text)
-    tokens = word_tokenize(text)
-    words_filtered = [t for t in tokens if any(c.isalnum() for c in t)]
-    return len(words_filtered), len(sentences)
+def load_text_from_pdf_bytes(data: bytes):
+    if not PYPDF_AVAILABLE:
+        return ""
+    try:
+        reader = PdfReader(BytesIO(data))
+        pages = []
+        for p in reader.pages:
+            t = p.extract_text()
+            if t:
+                pages.append(t)
+        return "\n\n".join(pages)
+    except Exception:
+        return ""
 
-def estimate_reading_seconds(words_count: int, wpm: int = 200) -> int:
+def load_text_from_docx_bytes(data: bytes):
+    if not DOCX_AVAILABLE:
+        return ""
+    try:
+        with BytesIO(data) as bio:
+            doc = docx.Document(bio)
+            paras = [p.text for p in doc.paragraphs if p.text]
+            return "\n\n".join(paras)
+    except Exception:
+        return ""
+
+def safe_load_uploaded_file(uploaded):
+    if uploaded is None:
+        return ""
+    name = uploaded.name.lower()
+    data = uploaded.getvalue()
+    if name.endswith(".pdf"):
+        return load_text_from_pdf_bytes(data)
+    if name.endswith(".docx"):
+        return load_text_from_docx_bytes(data)
+    try:
+        return data.decode("utf-8")
+    except Exception:
+        try:
+            return data.decode("latin-1")
+        except Exception:
+            return ""
+
+# -------------------- Analysis helpers --------------------
+def word_and_sentence_counts(text):
+    sents = sent_tokenize(text)
+    toks = word_tokenize(text)
+    words = [t for t in toks if any(c.isalnum() for c in t)]
+    return len(words), len(sents)
+
+def estimate_reading_seconds(words_count, wpm=200):
     if wpm <= 0:
         return 0
     minutes = words_count / float(wpm)
     return int(round(minutes * 60))
 
-def infer_category(text: str, top_k=1):
+def infer_category(text, top_k=1):
     try:
-        vectorizer = TfidfVectorizer(stop_words="english", max_features=2000)
-        X = vectorizer.fit_transform([text])
-        terms = vectorizer.get_feature_names_out()
+        vec = TfidfVectorizer(stop_words="english", max_features=2000)
+        X = vec.fit_transform([text])
+        terms = vec.get_feature_names_out()
         scores = np.asarray(X.todense()).ravel()
         if scores.sum() == 0:
-            return None
+            return "General"
         top_idx = scores.argsort()[-top_k:][::-1]
         top_terms = [terms[i] for i in top_idx if i < len(terms)]
         return ", ".join(top_terms)
     except Exception:
-        return None
+        return "General"
 
-# -------------------- DB interactions for articles --------------------
-def save_article(user_id: int, url: str, title: str, category: str, words: int, sentences: int, seconds: int):
+# -------------------- DB article/session actions --------------------
+def save_article_to_db(user_id, url, title, category, words, sentences, seconds):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO articles (user_id, url, title, category, words, sentences, estimated_seconds, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-        (user_id, url, title, category, words, sentences, int(seconds), dt.datetime.utcnow().isoformat())
-    )
+    cur.execute("INSERT INTO articles (user_id, url, title, category, words, sentences, estimated_seconds, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                (user_id, url, title, category, words, sentences, int(seconds), dt.datetime.utcnow().isoformat()))
     conn.commit()
     conn.close()
 
-def fetch_user_articles(user_id: int) -> pd.DataFrame:
+def fetch_user_articles(user_id):
     conn = get_conn()
     df = pd.read_sql_query("SELECT * FROM articles WHERE user_id = ? ORDER BY created_at DESC", conn, params=(user_id,))
     conn.close()
@@ -698,356 +328,447 @@ def fetch_user_articles(user_id: int) -> pd.DataFrame:
     df["created_at"] = pd.to_datetime(df["created_at"])
     return df
 
-# -------------------- Streamlit UI --------------------
-st.set_page_config(page_title="Reader Dashboard", layout="wide", initial_sidebar_state="collapsed")
-load_custom_css()
+def store_session(user_id, seconds, source=None, words_count=None):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("INSERT INTO reading_sessions (user_id, seconds, source, words_count, created_at) VALUES (?, ?, ?, ?, ?)",
+                (user_id, int(seconds), source, words_count, dt.datetime.utcnow().isoformat()))
+    conn.commit()
+    conn.close()
 
-# session state
+def fetch_user_sessions(user_id):
+    conn = get_conn()
+    df = pd.read_sql_query("SELECT * FROM reading_sessions WHERE user_id = ? ORDER BY created_at DESC", conn, params=(user_id,))
+    conn.close()
+    if df.empty:
+        return pd.DataFrame(columns=["id","user_id","seconds","source","words_count","created_at"])
+    df["created_at"] = pd.to_datetime(df["created_at"])
+    return df
+
+# -------------------- Small UI utilities --------------------
+def safe_rerun():
+    try:
+        if hasattr(st, "experimental_rerun"):
+            st.experimental_rerun()
+        else:
+            st.stop()
+    except Exception:
+        st.stop()
+
+# -------------------- CSS and layout --------------------
+def load_css():
+    st.markdown(
+        f"""
+        <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap');
+
+        * {{ font-family: 'Inter', sans-serif; }}
+
+        /* Header area */
+        .app-header {{
+            text-align: center;
+            padding-top: 40px;
+            padding-bottom: 12px;
+        }}
+        .app-title {{
+            font-size: 44px;
+            font-weight: 800;
+            margin: 0;
+            color: #7c6ef5;
+            letter-spacing: -0.5px;
+        }}
+        .app-subtitle {{
+            font-size: 16px;
+            color: #9aa0a6;
+            margin: 8px 0 28px 0;
+        }}
+
+        /* Auth container - lifted up behind header */
+        .auth-container {{
+            margin-top: -70px !important;   /* <- lifts it upward behind header */
+            max-width: 420px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+            background: #ffffff !important;
+            border-radius: 18px !important;
+            padding: 24px 22px !important;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.35) !important;
+            text-align: center !important;
+        }}
+
+        .auth-title {{ font-size: 18px; font-weight:700; margin-bottom: 6px; color:#111827; }}
+        .auth-subtitle {{ color:#6b7280; margin-bottom: 10px; }}
+
+        .stTextInput > div > div > input {{
+            border-radius: 10px !important;
+            border: 1px solid #d1d5db !important;
+            padding: 8px 12px !important;
+            font-size: 0.95em !important;
+            max-width: 280px !important;
+            margin: 6px auto !important;
+            text-align: center !important;
+        }}
+
+        .stPasswordInput > div > div > input {{
+            border-radius: 10px !important;
+            border: 1px solid #d1d5db !important;
+            padding: 8px 12px !important;
+            font-size: 0.95em !important;
+            max-width: 280px !important;
+            margin: 6px auto !important;
+            text-align: center !important;
+        }}
+
+        .glass-card {{
+            background: rgba(255,255,255,0.96);
+            border-radius: 12px;
+            padding: 18px;
+            box-shadow: 0 10px 30px rgba(2,6,23,0.08);
+            border: 1px solid rgba(0,0,0,0.04);
+        }}
+
+        .preview-card {{
+            padding: 14px;
+            border-left: 4px solid #7c6ef5;
+            background: #fbfdff;
+            border-radius: 8px;
+        }}
+
+        /* Metric subtle styling */
+        div[data-testid="metric-container"] {{
+            background: linear-gradient(180deg, #ffffff, #f8fafc);
+            border-radius: 12px;
+            padding: 12px;
+            box-shadow: 0 8px 22px rgba(2,6,23,0.04);
+        }}
+
+        /* Buttons */
+        .stButton>button {{
+            background: linear-gradient(90deg,#7c6ef5,#5a67f2) !important;
+            color: white !important;
+            border-radius: 12px !important;
+            padding: 10px 18px !important;
+            font-weight: 700 !important;
+            border: none !important;
+        }}
+
+        /* small screens adjustments */
+        @media (max-width: 600px) {{
+            .app-title {{ font-size: 28px; }}
+            .auth-container {{ margin-top: -40px !important; padding: 18px !important; }}
+            .stTextInput > div > div > input {{ max-width: 200px !important; }}
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# -------------------- Streamlit App --------------------
+st.set_page_config(page_title="Reader — Full App", layout="wide")
+load_css()
+
 if "user_id" not in st.session_state:
     st.session_state.user_id = None
 if "page" not in st.session_state:
     st.session_state.page = "auth"
 
-# --- Authentication UI ---
+# persisted content holders
+if "fetched_text" not in st.session_state:
+    st.session_state.fetched_text = ""
+if "fetched_title" not in st.session_state:
+    st.session_state.fetched_title = ""
+if "fetched_source" not in st.session_state:
+    st.session_state.fetched_source = None
+if "manual_mode" not in st.session_state:
+    st.session_state.manual_mode = False
+if "timer_running" not in st.session_state:
+    st.session_state.timer_running = False
+    st.session_state.timer_start = None
+
+# ---------- Auth page ----------
 def auth_page():
-    st.markdown("""
-    <div class="app-header">
-        <h1 class="app-title">📚 Reader Dashboard</h1>
-        <p class="app-subtitle">Save, track, and manage your reading journey</p>
-    </div>
+    # header (kept separate so the auth box can overlap)
+    st.markdown(f"""
+        <div class="app-header">
+            <div style="display:flex; align-items:center; justify-content:center; gap:14px;">
+                <img src="file://{SAMPLE_IMAGE}" style="width:44px;height:44px;border-radius:8px;object-fit:cover;box-shadow:0 6px 20px rgba(0,0,0,0.35);"/>
+                <div>
+                    <div class="app-title">Reader Dashboard</div>
+                    <div class="app-subtitle">Save, track and manage your reading journey</div>
+                </div>
+            </div>
+        </div>
     """, unsafe_allow_html=True)
-    
+
+    # centered auth container (this sits visually on top of header due to negative margin)
     st.markdown('<div class="auth-container">', unsafe_allow_html=True)
-    
-    st.markdown('<h2 class="auth-title">Welcome</h2>', unsafe_allow_html=True)
-    st.markdown('<p class="auth-subtitle">Sign in to start tracking your articles</p>', unsafe_allow_html=True)
-    
+    st.markdown('<div class="auth-title">Sign in or create an account</div>', unsafe_allow_html=True)
+    st.markdown('<div class="auth-subtitle">Your reading history will be saved under your profile</div>', unsafe_allow_html=True)
+
     mode = st.radio("", ["Login", "Sign up"], horizontal=True, label_visibility="collapsed")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    
+
     if mode == "Sign up":
-        dn = st.text_input("Display name (optional)", key="su_disp", placeholder="Your name")
-        un = st.text_input("Username", key="su_user", placeholder="Choose a username")
-        em = st.text_input("Email (optional)", key="su_email", placeholder="your@email.com")
-        pw = st.text_input("Password", type="password", key="su_pass", placeholder="Create a password")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        if st.button("Create account", use_container_width=True, type="primary"):
-            ok, msg = create_user(un, pw, display_name=dn or None, email=em or None)
+        display_name = st.text_input("Display name (optional)", key="su_display")
+        username = st.text_input("Username", key="su_username")
+        email = st.text_input("Email (optional)", key="su_email")
+        password = st.text_input("Password", type="password", key="su_password")
+        if st.button("Create account"):
+            ok, msg = create_user(username, password, display_name or None, email or None)
             if ok:
-                uid = verify_user(un, pw)
+                uid = verify_user(username, password)
                 st.session_state.user_id = int(uid) if uid else None
                 st.session_state.page = "app"
-                st.success("🎉 Account created!")
-                time.sleep(0.5)
-                st.rerun()
+                st.success("Account created — signed in.")
+                time.sleep(0.3)
+                safe_rerun()
             else:
                 st.error(msg)
     else:
-        un = st.text_input("Username", key="li_user", placeholder="Your username")
-        pw = st.text_input("Password", type="password", key="li_pass", placeholder="Your password")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        if st.button("Log in", use_container_width=True, type="primary"):
-            uid = verify_user(un, pw)
+        username = st.text_input("Username", key="li_username")
+        password = st.text_input("Password", type="password", key="li_password")
+        if st.button("Log in"):
+            uid = verify_user(username, password)
             if uid:
                 st.session_state.user_id = int(uid)
                 st.session_state.page = "app"
-                st.success("✅ Welcome back!")
-                time.sleep(0.5)
-                st.rerun()
+                st.success("Signed in.")
+                time.sleep(0.2)
+                safe_rerun()
             else:
-                st.error("❌ Invalid credentials")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-    st.markdown("---")
-    
-    if st.button("Continue as guest", use_container_width=True):
+                st.error("Invalid credentials")
+
+    st.markdown("<br/>", unsafe_allow_html=True)
+    if st.button("Continue as guest"):
         st.session_state.user_id = None
         st.session_state.page = "app"
-        st.rerun()
-    
+        safe_rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- Main app page ---
+# ---------- Main app page ----------
 def app_page():
     profile = get_profile(st.session_state.user_id) if st.session_state.user_id else None
-    
-    # Header
+
+    # Header area
     st.markdown("""
-    <div class="app-header">
-        <h1 class="app-title">📚 Reader Dashboard</h1>
-        <p class="app-subtitle">Your personal reading companion</p>
-    </div>
+        <div style="text-align:center; padding-top:26px; padding-bottom:6px;">
+            <div class="app-title">Reader Dashboard</div>
+            <div class="app-subtitle">Track your reading, build momentum</div>
+        </div>
     """, unsafe_allow_html=True)
-    
-    # User info bar
-    st.markdown('<div class="user-info-bar">', unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col1:
+
+    # User info + actions
+    cols = st.columns([1,2,1])
+    with cols[0]:
         if profile:
-            st.markdown(f'<div class="user-badge">👤 {profile.get("display_name") or profile.get("username")}</div>', unsafe_allow_html=True)
-        else:
-            st.markdown('<div class="user-badge">👤 Guest Mode</div>', unsafe_allow_html=True)
-    
-    with col3:
-        if profile:
-            if st.button("Logout", use_container_width=True):
+            st.markdown(f"**Signed in as:** {profile.get('display_name') or profile.get('username')}")
+            if st.button("Logout"):
                 st.session_state.user_id = None
                 st.session_state.page = "auth"
-                st.rerun()
+                safe_rerun()
         else:
-            if st.button("Sign In", use_container_width=True):
+            st.markdown("**Guest**")
+            if st.button("Sign in"):
                 st.session_state.page = "auth"
-                st.rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
+                safe_rerun()
 
-    # Main content area
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.markdown('<div class="subsection-header">🔗 Add New Article</div>', unsafe_allow_html=True)
-    
-    # Add tabs for URL vs Manual entry
-    tab1, tab2 = st.tabs(["📎 From URL", "✍️ Paste Text"])
-    
-    with tab1:
-        url_input = st.text_input("Paste website URL", 
-                                   value=st.session_state.get("url_input",""),
-                                   placeholder="https://example.com/article",
-                                   label_visibility="collapsed")
-        
-        col1, col2, col3 = st.columns([1,1,2])
-        with col1:
-            fetch_button = st.button("🔍 Fetch & Analyze", use_container_width=True, key="fetch_btn")
-        
-        if fetch_button:
-            st.session_state.url_input = url_input
-            if not url_input or not url_input.strip():
-                st.warning("⚠️ Please paste a valid URL.")
-            else:
-                with st.spinner("📡 Fetching article..."):
-                    fetched_text, fetched_title, method = extract_text_from_url(url_input.strip())
-                    if not fetched_text:
-                        st.error("❌ Could not extract article text. The site may be JavaScript-heavy or have anti-scraping protection.")
-                        
-                        # Show helpful troubleshooting box
-                        with st.expander("💡 Troubleshooting Tips", expanded=True):
-                            site_type = ""
-                            if "medium.com" in url_input.lower():
-                                site_type = "Medium"
-                            elif "substack.com" in url_input.lower():
-                                site_type = "Substack"
-                            elif "linkedin.com" in url_input.lower():
-                                site_type = "LinkedIn"
-                            
-                            tips = f"**For {site_type} articles:**\n\n" if site_type else "**Quick Solutions:**\n\n"
-                            
-                            st.markdown(tips + """
-                            1. **✅ Best Solution - Use Manual Entry:**
-                               - Click the "**✍️ Paste Text**" tab above
-                               - Open the article in your browser
-                               - Select all text (Ctrl+A or Cmd+A)
-                               - Copy and paste here with the title
-                            
-                            2. **Try simplifying the URL:**
-                               - Remove everything after `?` in the URL
-                               - Example: Keep only the base article URL
-                            
-                            3. **Optional - Better extraction:**
-                               - Install newspaper3k: `pip install newspaper3k`
-                               - Restart the app for improved extraction
-                            
-                            **Why this happens:** Sites like Medium, Substack, and LinkedIn load content 
-                            dynamically with JavaScript, which basic web scrapers can't read. Manual entry 
-                            works 100% of the time! 📝
-                            """)
-                        
-                        st.session_state.fetched_text = ""
-                        st.session_state.fetched_title = ""
-                    else:
-                        st.session_state.fetched_text = fetched_text
-                        # Use extracted title or fallback to first line
-                        if not fetched_title:
-                            first_line = next((line.strip() for line in fetched_text.splitlines() if line.strip()), "")
-                            fetched_title = first_line[:120]
-                        st.session_state.fetched_title = fetched_title
-                        st.session_state.manual_mode = False
-                        st.success(f"✅ Article fetched successfully using {method}!")
-                        if not NEWSPAPER_AVAILABLE:
-                            st.info("💡 Install `newspaper3k` for even better article extraction from news sites and Medium.")
-    
-    with tab2:
-        st.markdown('<div class="subsection-header" style="font-size: 1.2em; margin-top: 15px;">📝 Manual Article Entry</div>', unsafe_allow_html=True)
-        
-        # Instructions with visual steps
-        with st.expander("📖 How to manually add an article (3 easy steps)", expanded=False):
-            st.markdown("""
-            ### Quick Guide:
-            
-            **Step 1:** Open the article in your browser
-            
-            **Step 2:** Select all text
-            - **Windows/Linux:** Press `Ctrl + A`
-            - **Mac:** Press `Cmd + A`
-            
-            **Step 3:** Copy & paste here
-            - **Windows/Linux:** `Ctrl + C` then `Ctrl + V`
-            - **Mac:** `Cmd + C` then `Cmd + V`
-            
-            ---
-            
-            ✅ **Works perfectly for:** Medium, Substack, LinkedIn, paywalled sites, PDFs (copy text first)
-            
-            ⏱️ **Takes:** ~30 seconds
-            """)
-        
-        st.info("💡 This method works 100% of the time for any article you can read!")
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            manual_title = st.text_input("📄 Article Title", placeholder="Enter the article title here", key="manual_title")
-        with col2:
-            manual_category = st.text_input("🏷️ Category (optional)", placeholder="e.g., Technology", key="manual_category")
-        
-        manual_url = st.text_input("🔗 Article URL (optional)", placeholder="https://example.com/article", key="manual_url")
-        manual_text = st.text_area("📝 Article Content", 
-                                   height=350, 
-                                   placeholder="Paste the full article text here...\n\nTip: Select all (Ctrl+A / Cmd+A), copy, and paste.",
-                                   key="manual_text")
-        
-        # Show character count
-        if manual_text:
-            char_count = len(manual_text)
-            word_count_preview = len(manual_text.split())
-            st.caption(f"✍️ {char_count:,} characters · ~{word_count_preview:,} words")
-        else:
-            st.markdown('<p class="caption">* Title and content are required</p>', unsafe_allow_html=True)
-        
-        col1, col2, col3 = st.columns([1, 1, 1])
-        with col2:
-            if st.button("📊 Analyze Pasted Text", use_container_width=True, type="primary", key="manual_btn"):
-                if not manual_text.strip():
-                    st.warning("⚠️ Please paste the article text.")
-                elif not manual_title.strip():
-                    st.warning("⚠️ Please enter an article title.")
+    # Left column: input / controls
+    left, right = st.columns([1,2])
+    with left:
+        st.markdown("<div class='glass-card'>", unsafe_allow_html=True)
+        st.markdown("### Add an article")
+        input_mode = st.radio("Input mode", ["Website URL", "Paste text", "Upload file"], index=0)
+
+        # ensure persisted keys
+        if "url_input" not in st.session_state:
+            st.session_state.url_input = ""
+        if "paste_text" not in st.session_state:
+            st.session_state.paste_text = ""
+        if "uploaded_name" not in st.session_state:
+            st.session_state.uploaded_name = ""
+
+        if input_mode == "Website URL":
+            st.session_state.url_input = st.text_input("Paste article URL (include https://)", value=st.session_state.url_input)
+            if st.button("Fetch & Analyze"):
+                if not st.session_state.url_input.strip():
+                    st.warning("Please paste a valid URL.")
                 else:
-                    st.session_state.fetched_text = manual_text.strip()
-                    st.session_state.fetched_title = manual_title.strip()
-                    st.session_state.url_input = manual_url.strip() if manual_url.strip() else f"manual-entry-{int(time.time())}"
+                    with st.spinner("Fetching article..."):
+                        txt, title, method = extract_text_from_url(st.session_state.url_input.strip())
+                        if not txt:
+                            st.error("Could not extract article text. Try the Paste Text option or a simpler URL.")
+                            st.session_state.fetched_text = ""
+                            st.session_state.fetched_title = ""
+                            st.session_state.fetched_source = None
+                        else:
+                            st.session_state.fetched_text = txt
+                            st.session_state.fetched_title = title or (txt.splitlines()[0][:120] if txt else "")
+                            st.session_state.fetched_source = st.session_state.url_input.strip()
+                            st.session_state.manual_mode = False
+                            st.success(f"Fetched (method: {method})")
+        elif input_mode == "Paste text":
+            st.session_state.paste_text = st.text_area("Paste full article text here", value=st.session_state.paste_text, height=240)
+            st.session_state.fetched_text = st.session_state.paste_text
+            st.session_state.fetched_title = st.text_input("Article title (optional)", value=st.session_state.fetched_title or "")
+            st.session_state.fetched_source = st.text_input("Source URL (optional)", value=st.session_state.fetched_source or "")
+            st.session_state.manual_mode = True
+            if st.button("Analyze pasted text"):
+                if not st.session_state.fetched_text.strip():
+                    st.warning("Paste the article text first.")
+                else:
+                    st.success("Text loaded for analysis.")
+        else:  # Upload
+            up = st.file_uploader("Upload .txt, .pdf, .docx", type=["txt","pdf","docx"])
+            if up:
+                st.session_state.uploaded_name = up.name
+                loaded = safe_load_uploaded_file(up)
+                if not loaded:
+                    st.error("Could not extract from uploaded file.")
+                else:
+                    st.session_state.fetched_text = loaded
+                    st.session_state.fetched_title = up.name
+                    st.session_state.fetched_source = up.name
                     st.session_state.manual_mode = True
-                    st.session_state.manual_category = manual_category.strip() if manual_category.strip() else None
-                    st.success("✅ Text analyzed successfully!")
-                    st.rerun()
+                    st.success("File loaded for analysis.")
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    # Show extracted metrics
-    fetched_text = st.session_state.get("fetched_text", "")
-    fetched_title = st.session_state.get("fetched_title", "")
-    
-    if fetched_text:
-        words, sentences = word_and_sentence_counts(fetched_text)
-        est_seconds = estimate_reading_seconds(words, wpm=200)
-        
-        # Use manual category if provided, otherwise infer
-        if st.session_state.get("manual_mode") and st.session_state.get("manual_category"):
-            category = st.session_state.manual_category
-        else:
-            category = infer_category(fetched_text) or "General"
-        
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.markdown('<div class="subsection-header">📊 Article Analysis</div>', unsafe_allow_html=True)
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📝 Words", f"{words:,}")
-        col2.metric("💬 Sentences", f"{sentences:,}")
-        col3.metric("⏱️ Read Time", f"{int(est_seconds/60)}m {est_seconds%60}s")
-        col4.metric("🏷️ Category", category)
-        
-        # Show preview with better formatting
         st.markdown("---")
-        st.markdown("**📄 Article Preview:**")
-        preview_text = fetched_title if len(fetched_title) > 50 else fetched_text[:200]
-        st.markdown(f'<div class="preview-card">{preview_text}{"..." if len(fetched_text) > 200 else ""}</div>', unsafe_allow_html=True)
+        st.markdown("### Reading speed")
+        wpm_choice = st.selectbox("WPM", ["200 (avg)", "150 (slow)", "250 (fast)", "Custom"], index=0)
+        if wpm_choice == "200 (avg)":
+            wpm = 200
+        elif wpm_choice == "150 (slow)":
+            wpm = 150
+        elif wpm_choice == "250 (fast)":
+            wpm = 250
+        else:
+            wpm = st.number_input("Custom WPM", min_value=50, max_value=1000, value=200, step=10)
 
-        col1, col2, col3 = st.columns([1,1,1])
-        with col2:
-            if st.button("➕ Add to Dashboard", use_container_width=True, type="primary"):
-                if not st.session_state.user_id:
-                    st.info("🔐 Sign in to save articles to your dashboard.")
+        st.markdown("---")
+        st.markdown("### Tracker")
+        if not st.session_state.timer_running:
+            if st.button("Start timer"):
+                st.session_state.timer_running = True
+                st.session_state.timer_start = time.time()
+                st.success("Timer started")
+        else:
+            if st.button("Stop timer"):
+                if st.session_state.timer_running and st.session_state.timer_start:
+                    elapsed = int(round(time.time() - st.session_state.timer_start))
+                    st.session_state.timer_running = False
+                    st.session_state.timer_start = None
+                    st.success(f"Stopped — recorded {elapsed} seconds")
+                    if st.session_state.user_id:
+                        wc = None
+                        if st.session_state.fetched_text:
+                            wc, _ = word_and_sentence_counts(st.session_state.fetched_text)
+                        store_session(st.session_state.user_id, elapsed, st.session_state.fetched_source, wc)
+                    else:
+                        st.info("Guest session not saved. Log in to persist history.")
                 else:
-                    save_article(
-                        st.session_state.user_id,
-                        st.session_state.url_input.strip(),
-                        fetched_title,
-                        category,
-                        words,
-                        sentences,
-                        est_seconds
-                    )
-                    st.success("🎉 Article saved to your dashboard!")
+                    st.info("Timer wasn't running.")
+
+        add_min = st.number_input("Add minutes", min_value=0, max_value=1000, value=0, step=1)
+        if st.button("Add minutes"):
+            if add_min > 0:
+                seconds = int(add_min * 60)
+                if st.session_state.user_id:
+                    wc = None
+                    if st.session_state.fetched_text:
+                        wc, _ = word_and_sentence_counts(st.session_state.fetched_text)
+                    store_session(st.session_state.user_id, seconds, st.session_state.fetched_source, wc)
+                    st.success(f"Added {add_min} minutes.")
+                else:
+                    st.info("Guest session not saved. Log in to persist history.")
+
+        st.markdown('</div>', unsafe_allow_html=True)  # close left glass-card
+
+    # Right column: analysis & dashboard
+    with right:
+        # Show analysis if we have text
+        txt = st.session_state.get("fetched_text", "")
+        title = st.session_state.get("fetched_title", "")
+        src = st.session_state.get("fetched_source", None)
+        if txt and txt.strip():
+            words, sentences = word_and_sentence_counts(txt)
+            est_seconds = estimate_reading_seconds(words, wpm)
+            category = infer_category(txt) if not st.session_state.manual_mode else (st.session_state.get("manual_category") or infer_category(txt))
+            # Analysis card
+            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+            st.markdown("### Article analysis")
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric("Words", f"{words:,}")
+            col2.metric("Sentences", f"{sentences:,}")
+            col3.metric("Est. read time", f"{int(est_seconds/60)}m {est_seconds%60}s")
+            col4.metric("Category", category)
+            st.markdown("---")
+            st.markdown("**Preview**")
+            preview = title if title and len(title) > 10 else txt[:400]
+            st.markdown(f'<div class="preview-card">{preview}{"..." if len(txt) > 400 else ""}</div>', unsafe_allow_html=True)
+            st.markdown("")
+            if st.button("➕ Add to dashboard"):
+                if not st.session_state.user_id:
+                    st.info("Sign in to save articles to your dashboard.")
+                else:
+                    save_article_to_db(st.session_state.user_id, src or f"manual-{int(time.time())}", title or preview[:120], category, words, sentences, est_seconds)
+                    st.success("Saved to your dashboard.")
+                    # clear fetched state
                     st.session_state.fetched_text = ""
                     st.session_state.fetched_title = ""
-                    st.session_state.url_input = ""
-                    time.sleep(1)
-                    st.rerun()
-        
-        st.markdown('</div>', unsafe_allow_html=True)
+                    st.session_state.fetched_source = None
+                    st.experimental_rerun()
+            st.markdown('</div>', unsafe_allow_html=True)
+        else:
+            st.info("No article loaded. Use the left panel to fetch, paste, or upload an article.")
 
-    # Saved articles section
-    st.markdown('<h2 class="section-header">📖 Your Reading Library</h2>', unsafe_allow_html=True)
-    
-    if not st.session_state.user_id:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.info("🔐 Sign in to view your saved articles and reading statistics.")
-        st.markdown('</div>', unsafe_allow_html=True)
-        return
+        # Dashboard (only for signed-in users)
+        st.markdown("<br/>")
+        st.markdown("## Your Dashboard")
+        if not st.session_state.user_id:
+            st.info("Sign in to view saved articles and stats.")
+        else:
+            df_articles = fetch_user_articles(st.session_state.user_id)
+            if df_articles.empty:
+                st.info("No saved articles yet.")
+            else:
+                total_articles = len(df_articles)
+                total_words = int(df_articles["words"].sum())
+                total_seconds = int(df_articles["estimated_seconds"].sum())
+                st.markdown('<div class="glass-card">', unsafe_allow_html=True)
+                s1, s2, s3 = st.columns(3)
+                s1.metric("Total articles", f"{total_articles}")
+                s2.metric("Total words", f"{total_words:,}")
+                s3.metric("Total time", f"{int(total_seconds/3600)}h {int((total_seconds%3600)/60)}m")
+                st.markdown("---")
+                display = df_articles.copy()
+                display["Added at"] = display["created_at"].dt.strftime("%Y-%m-%d %H:%M")
+                display["Minutes"] = (display["estimated_seconds"]/60).round(1)
+                display = display[["Added at","title","category","words","sentences","Minutes","url"]]
+                display = display.rename(columns={"title":"Title","category":"Category","words":"Words","sentences":"Sentences","url":"URL"})
+                st.dataframe(display, use_container_width=True)
+                csv = df_articles.to_csv(index=False)
+                st.download_button("Export articles CSV", data=csv, file_name="my_articles.csv", mime="text/csv")
+                st.markdown('</div>', unsafe_allow_html=True)
 
-    articles_df = fetch_user_articles(st.session_state.user_id)
-    
-    if articles_df.empty:
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.info("📭 No saved articles yet. Add your first article above!")
-        st.markdown('</div>', unsafe_allow_html=True)
-        return
-
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    
-    # Display statistics
-    total_articles = len(articles_df)
-    total_words = int(articles_df["words"].sum())
-    total_seconds = int(articles_df["estimated_seconds"].sum())
-    
-    stat_col1, stat_col2, stat_col3 = st.columns(3)
-    stat_col1.metric("📚 Total Articles", f"{total_articles}")
-    stat_col2.metric("📝 Total Words", f"{total_words:,}")
-    stat_col3.metric("⏱️ Total Time", f"{int(total_seconds/3600)}h {int((total_seconds%3600)/60)}m")
-    
-    st.markdown("---")
-    
-    # Display table
-    display = articles_df.copy()
-    display["when"] = display["created_at"].dt.strftime("%Y-%m-%d %H:%M")
-    display["time_minutes"] = (display["estimated_seconds"]/60).round(1)
-    display = display[["when","title","category","words","sentences","time_minutes","url"]]
-    display = display.rename(columns={
-        "when":"📅 Added",
-        "title":"📄 Title",
-        "category":"🏷️ Category",
-        "words":"📝 Words",
-        "sentences":"💬 Sentences",
-        "time_minutes":"⏱️ Minutes",
-        "url":"🔗 URL"
-    })
-    
-    st.dataframe(display, use_container_width=True, hide_index=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        # Sessions / time chart
+        if st.session_state.user_id:
+            sessions = fetch_user_sessions(st.session_state.user_id)
+            if not sessions.empty:
+                # totals
+                today = dt.date.today()
+                sessions["date"] = sessions["created_at"].dt.date
+                seconds_today = int(sessions[sessions["date"] == today]["seconds"].sum())
+                seconds_7d = int(sessions[sessions["created_at"] >= (pd.Timestamp.utcnow() - pd.Timedelta(days=7))]["seconds"].sum())
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Today", f"{int(seconds_today/60)} min")
+                m2.metric("Last 7 days", f"{int(seconds_7d/60)} min")
+                m3.metric("Sessions stored", f"{len(sessions)}")
+                st.markdown("### Daily reading (last 90 days)")
+                series = sessions.set_index("created_at").resample("D")["seconds"].sum().reindex(pd.date_range(end=pd.Timestamp.utcnow().normalize(), periods=90), fill_value=0)
+                series.index = pd.to_datetime(series.index).date
+                st.line_chart(series)
+    # end right column
 
 # Router
-if st.session_state.page == "auth" or st.session_state.user_id is None:
+if st.session_state.page == "auth" and not st.session_state.user_id:
     auth_page()
 else:
     app_page()
